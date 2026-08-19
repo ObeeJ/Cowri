@@ -175,7 +175,9 @@ function describedBy(field: FieldContextValue | null): string | undefined {
 
 // ── Input ───────────────────────────────────────────────────────────────────
 
-export type InputProps = InputHTMLAttributes<HTMLInputElement> & {
+// `prefix` is omitted from the native attributes because HTML defines it as a
+// string, and this component takes a node.
+export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'prefix'> & {
   /** Rendered inside the control on the left. Non-interactive. */
   prefix?: ReactNode
   /** Rendered inside the control on the right. Can hold a button. */

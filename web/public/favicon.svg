@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Cowri">
+  <rect width="32" height="32" rx="4" fill="#0f5c48"/>
+  <g fill="none" stroke="#f4f1ea" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 5c5.2 0 8.4 5.1 8.4 11.7S21.2 27 16 27 7.6 23.3 7.6 16.7 10.8 5 16 5Z"/>
+    <path d="M16 10.5v11"/>
+    <path d="M13.9 12.6 16 10.5l2.1 2.1M13.9 16 16 13.9 18.1 16M13.9 19.4 16 17.3l2.1 2.1"/>
+  </g>
+</svg>
