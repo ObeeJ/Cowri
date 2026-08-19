@@ -205,7 +205,7 @@ export function ContributionSchedule({ detail, className }: ContributionSchedule
       <div className="flex items-baseline justify-between gap-4 py-2.5">
         <dt className="text-sm text-ink-muted">Platform fee, taken from each payout</dt>
         <dd>
-          <MoneyAmount kobo={fee} size="sm" tone="muted" koboDigits="always" />
+          <MoneyAmount kobo={fee} size="sm" tone="muted" />
         </dd>
       </div>
       <div className="flex items-baseline justify-between gap-4 py-2.5">

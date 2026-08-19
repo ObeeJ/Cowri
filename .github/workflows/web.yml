@@ -1,0 +1,36 @@
+name: Web
+
+on:
+  push:
+    branches: ["master"]
+    paths: ["web/**", ".github/workflows/web.yml"]
+  pull_request:
+    branches: ["master"]
+    paths: ["web/**", ".github/workflows/web.yml"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npx vite build
+        env:
+          VITE_COWRI_API_URL: "https://api.cowri.app/v1"

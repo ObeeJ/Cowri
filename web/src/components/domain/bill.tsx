@@ -3,7 +3,7 @@ import { cn } from '~/lib/cn'
 import type { Bill, BillParticipantSummary, Uuid } from '~/lib/api/types'
 import { formatDate } from '~/lib/format'
 import { Skeleton, SkeletonGroup } from '~/components/ui/skeleton'
-import { Avatar } from '~/components/ui/display'
+import { UserIcon } from '~/components/icons'
 import { MoneyAmount } from './money-amount'
 import { StatusPill } from './status-pill'
 
@@ -113,7 +113,19 @@ export function ParticipantSplitRow({
 
   return (
     <li className={cn('flex items-center gap-3 px-4 py-3 sm:px-5', className)}>
-      <Avatar name={isYou ? 'You' : participant.user_id.slice(0, 2)} size="sm" />
+      {/* A person mark rather than initials: the API returns no names, and
+          initials derived from an account id would be meaningless. */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          'flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-pill)] border',
+          isYou
+            ? 'border-accent-rule bg-accent-tint text-accent'
+            : 'border-rule bg-paper-sunken text-ink-faint',
+        )}
+      >
+        <UserIcon size={16} />
+      </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-[0.9375rem] text-ink">
           {name}
