@@ -1,0 +1,31 @@
+{
+  "name": "cowri-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Cowri web client. React frontend for the Cowri Rust API.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.5",
+    "@tanstack/react-router": "^1.135.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.16",
+    "@tanstack/react-router-devtools": "^1.135.4",
+    "@tanstack/router-plugin": "^1.135.4",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.1.0",
+    "tailwindcss": "^4.1.16",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.11",
+    "vite-plugin-pwa": "^1.0.3"
+  }
+}

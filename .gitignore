@@ -5,3 +5,10 @@
 *.pem
 *.key
 
+
+# Web client
+web/node_modules
+web/dist
+web/dev-dist
+web/.env
+web/.env.local
