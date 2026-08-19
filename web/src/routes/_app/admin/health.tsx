@@ -75,7 +75,7 @@ function AdminHealthPage() {
                 <Count value={outbox.data.failed} tone={outbox.data.failed > 0 ? 'clay' : 'ink'} />
               </Row>
             </dl>
-            <div className="px-5 pb-4">
+            <div className="border-t border-rule px-5 py-4">
               <Progress
                 value={outbox.data.delivered}
                 max={Math.max(outbox.data.total, 1)}
