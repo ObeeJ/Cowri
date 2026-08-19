@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Cowri">
+  <rect width="512" height="512" fill="#f4f1ea"/>
+  <g fill="none" stroke="#0f5c48" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 84c85 0 138 83 138 192s-53 152-138 152-138-43-138-152S171 84 256 84Z"/>
+    <path d="M256 180v180"/>
+    <path d="M222 214l34-34 34 34M222 274l34-34 34 34M222 334l34-34 34 34"/>
+  </g>
+</svg>
