@@ -2,7 +2,7 @@
 
 A fintech web application for Nigerians — digital rotating savings (Ajo/Esusu), bill splitting, and wallet management with Paystack payments.
 
-Built with Rust across the full stack: REST API on the backend, WebAssembly on the frontend.
+Rust REST API on the backend, with two clients: a React web app in `web/` and the original Leptos WebAssembly PWA in `frontend/`.
 
 ---
 
@@ -20,10 +20,10 @@ Built with Rust across the full stack: REST API on the backend, WebAssembly on t
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Rust, GlideAPI, Tokio |
-| Frontend | Rust, Leptos, WebAssembly |
+| Backend | Rust, GlideAPI, Tokio, Postgres |
+| Web client | React 19, TanStack Router, TanStack Query, Tailwind v4 |
+| Legacy client | Rust, Leptos, WebAssembly |
 | Payments | Paystack |
-| Styling | Tailwind CSS |
 
 ---
 
@@ -36,8 +36,13 @@ cowri/
 │   └── src/
 │       ├── services/   # auth, wallet, ajo, bills
 │       ├── routes/     # HTTP handlers
-│       ├── store/      # In-memory store (swap for Postgres in production)
+│       ├── store/      # In-memory store hydrated from Postgres
 │       └── middleware.rs
+├── web/          # React web client (see web/README.md)
+│   └── src/
+│       ├── routes/     # Marketing, auth, app and admin routes
+│       ├── components/ # ui primitives, domain surfaces, layouts
+│       └── lib/        # api client, money, auth, theme
 └── frontend/     # Leptos WASM PWA
     └── src/
         ├── pages/      # auth, dashboard
@@ -73,31 +78,61 @@ PAYSTACK_SECRET_KEY=sk_test_your_key_here
 # Backend (port 3000)
 cargo run -p backend
 
-# Frontend (port 8080)
+# React web client (port 5173)
+cd web && npm install && npm run dev
+
+# Leptos client (port 8080)
 cd frontend && trunk serve
 ```
+
+Set `CORS_ORIGIN` on the backend to whichever client origin you are running, or
+the browser will drop the session cookies without a visible error.
+
+The React client is documented in [`web/README.md`](web/README.md), and its
+component library, with props and live examples, is served at `/design-system`.
 
 ---
 
 ## API Reference
 
+Every route is served under the `/v1` prefix.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/auth/register` | Register with name, phone, PIN |
-| POST | `/auth/login` | Login, returns JWT |
-| GET | `/wallet` | Get wallet balance |
-| GET | `/wallet/transactions` | Transaction history |
-| POST | `/wallet/fund` | Initialize Paystack top-up |
-| POST | `/webhook/paystack` | Paystack webhook receiver |
-| GET | `/ajo` | List user's ajo groups |
-| POST | `/ajo` | Create a new ajo group |
-| POST | `/ajo/:id/join` | Join an existing group |
-| POST | `/ajo/:id/contribute` | Contribute for current cycle |
-| GET | `/bills` | List user's bills |
-| POST | `/bills` | Create and split a bill |
-| POST | `/bills/:id/pay` | Pay your share of a bill |
+| POST | `/v1/auth/register` | Register with name, phone, email and PIN. Sends an email OTP |
+| POST | `/v1/auth/verify-email` | Confirm the 6 digit OTP |
+| POST | `/v1/auth/resend-otp` | Send a fresh verification code |
+| POST | `/v1/auth/forgot-pin` | Send a PIN reset code |
+| POST | `/v1/auth/reset-pin` | Set a new PIN with the reset code |
+| POST | `/v1/auth/login` | Sign in. Sets the session cookies, returns user and wallet |
+| POST | `/v1/auth/refresh` | Rotate the session cookies |
+| POST | `/v1/auth/logout` | Invalidate the session server side |
+| GET | `/v1/wallet` | Wallet balance, available and ledger, in kobo |
+| GET | `/v1/wallet/transactions` | Transaction history, paginated |
+| POST | `/v1/wallet/fund` | Initialise a Paystack top-up. Honours `x-idempotency-key` |
+| POST | `/v1/webhook/paystack` | Paystack webhook receiver, HMAC verified |
+| GET | `/v1/ajo` | List the caller's savings circles |
+| POST | `/v1/ajo` | Create a circle |
+| GET | `/v1/ajo/:id` | Circle detail. Members only |
+| GET | `/v1/ajo/:id/invite` | Invite link. Circle admin only |
+| POST | `/v1/ajo/:id/join` | Take the next open seat |
+| POST | `/v1/ajo/:id/contribute` | Contribute for the current cycle |
+| GET | `/v1/bills` | List the caller's bills, paginated |
+| POST | `/v1/bills` | Create and split a bill |
+| GET | `/v1/bills/:id` | Bill detail. Participants only |
+| POST | `/v1/bills/:id/pay` | Pay your share |
+| GET | `/v1/health` | Liveness, including a Postgres ping |
+| GET | `/v1/ledger/check` | Recompute every wallet from its ledger entries |
+| GET | `/v1/admin/*` | Dashboard, users, roles, transactions, circles, outbox. Admin only |
 
-All authenticated endpoints require `Authorization: Bearer <token>`.
+Authentication is by httpOnly cookie. `POST /v1/auth/login` sets `access_token`
+and `refresh_token` as `HttpOnly; Secure; SameSite=Strict` cookies; browser
+clients send them with `credentials: 'include'` and never read them. A bearer
+`Authorization` header is also accepted, for server-to-server callers that hold
+a token by other means.
+
+Amounts are integers counted in kobo. No endpoint accepts or returns a decimal
+amount.
 
 ---
 

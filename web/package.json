@@ -7,8 +7,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "preview": "vite preview --port 4173",
+    "typecheck": "tsc --noEmit",
+    "mock-api": "node mock-api.mjs",
+    "smoke": "node smoke.mjs",
+    "smoke:app": "node smoke-app.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.5",
@@ -24,6 +27,7 @@
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.1.0",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4.1.16",
     "typescript": "^5.9.3",
     "vite": "^7.1.11",
