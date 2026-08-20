@@ -70,6 +70,8 @@ export function Divider({ orientation = 'horizontal', label, className }: Divide
 export type AvatarProps = {
   /** Used for the initials and the accessible name. */
   name: string
+  /** Uploaded profile photo. Falls back to initials when absent or unset. */
+  src?: string | null
   size?: 'sm' | 'md' | 'lg'
   className?: string
 }
@@ -82,13 +84,28 @@ function initials(name: string): string {
 }
 
 /**
- * Initials on a paper chip. No uploaded images anywhere in the product yet, so
- * there is no photo variant to fall back from.
+ * The uploaded profile photo when there is one; initials on a paper chip
+ * otherwise.
  *
- * @example <Avatar name="Adaeze Nwosu" size="md" />
+ * @example <Avatar name="Adaeze Nwosu" src={user.avatar_url} size="md" />
  */
-export function Avatar({ name, size = 'md', className }: AvatarProps) {
+export function Avatar({ name, src, size = 'md', className }: AvatarProps) {
   const box = { sm: 'size-7 text-[0.6875rem]', md: 'size-9 text-xs', lg: 'size-12 text-sm' }[size]
+
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        className={cn(
+          'inline-block shrink-0 rounded-[var(--radius-pill)] border border-rule object-cover',
+          box,
+          className,
+        )}
+      />
+    )
+  }
+
   return (
     <span
       role="img"

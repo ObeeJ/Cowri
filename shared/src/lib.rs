@@ -8,6 +8,13 @@ use uuid::Uuid;
 #[serde(rename_all = "snake_case")]
 pub enum UserRole { User, Admin }
 
+/// KYC state machine. `Unverified` (never attempted) and `Failed` (attempted,
+/// rejected) are distinct so the UI can tell "hasn't tried" from "tried and
+/// was turned down" — a resubmission path only makes sense for the latter.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum KycStatus { Unverified, Pending, Verified, Failed }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub id:             Uuid,
@@ -16,6 +23,8 @@ pub struct User {
     pub email:          Option<String>,
     pub role:           UserRole,
     pub email_verified: bool,
+    pub kyc_status:     KycStatus,
+    pub avatar_url:     Option<String>,
     pub created_at:     DateTime<Utc>,
 }
 
@@ -135,7 +144,7 @@ pub enum AjoFrequency { Daily, Weekly, Monthly }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub enum AjoStatus { Active, Completed, Paused }
+pub enum AjoStatus { Active, Completed, Paused, Cancelled }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AjoMember {
@@ -214,6 +223,65 @@ pub struct LoginRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TransactionPinRequest {
     pub transaction_pin: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VerifyBvnRequest {
+    pub bvn: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PresignUploadRequest {
+    pub content_type: String,
+    pub size_bytes:   i64,
+    /// Namespaces the object key and lets the same upload flow serve more
+    /// than one use case — "avatars" today, others later — without a
+    /// separate endpoint per kind of media.
+    pub purpose:      String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PresignUploadResponse {
+    /// The client PUTs the file's bytes directly here — this API never
+    /// sees the file itself.
+    pub upload_url: String,
+    pub object_key: String,
+    pub public_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConfirmUploadRequest {
+    pub object_key:   String,
+    pub content_type: String,
+    pub size_bytes:   i64,
+    pub purpose:      String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaItem {
+    pub id:           Uuid,
+    pub object_key:   String,
+    pub purpose:      String,
+    pub content_type: String,
+    pub size_bytes:   i64,
+    pub public_url:   String,
+    pub created_at:   DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KycStatusResponse {
+    pub kyc_status: KycStatus,
+}
+
+/// Admin-only view — the reference and failure reason are support/audit
+/// detail, not something an ordinary user's own profile needs to carry.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KycDetail {
+    pub kyc_status:         KycStatus,
+    pub kyc_verified_at:    Option<DateTime<Utc>>,
+    pub kyc_provider:       Option<String>,
+    pub kyc_reference:      Option<String>,
+    pub kyc_failure_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

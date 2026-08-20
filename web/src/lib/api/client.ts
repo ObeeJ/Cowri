@@ -25,6 +25,7 @@ import type {
   ApiErrorBody,
   Bill,
   BillDetail,
+  ConfirmUploadRequest,
   CreateAjoRequest,
   CreateBillRequest,
   ForgotPasswordRequest,
@@ -33,9 +34,13 @@ import type {
   LedgerCheckResponse,
   LoginRequest,
   LoginResponse,
+  KycStatusResponse,
+  MediaItem,
   MessageResponse,
   NotificationView,
   PaystackInitResponse,
+  PresignUploadRequest,
+  PresignUploadResponse,
   RegisterRequest,
   RegisterResponse,
   ResendOtpRequest,
@@ -45,6 +50,7 @@ import type {
   TransactionPinRequest,
   UserRole,
   Uuid,
+  VerifyBvnRequest,
   VerifyEmailRequest,
   Wallet,
 } from './types'
@@ -104,7 +110,7 @@ export class NetworkError extends Error {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST'
+  method?: 'GET' | 'POST' | 'DELETE'
   body?: unknown
   query?: Record<string, string | number | undefined>
   /** Sent as x-idempotency-key. Only /wallet/fund honours it server side. */
@@ -220,6 +226,29 @@ export function newIdempotencyKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+/**
+ * PUTs a file straight to the presigned R2 URL from `api.media.presign` —
+ * deliberately a plain `fetch`, not `request()`: the URL is on R2's own
+ * origin, not this API, so it takes no credentials and no auth headers,
+ * and the content-type must match exactly what the presign call declared
+ * or R2 rejects the signature.
+ */
+export async function uploadToPresignedUrl(uploadUrl: string, file: File): Promise<void> {
+  let response: Response
+  try {
+    response = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'content-type': file.type },
+      body: file,
+    })
+  } catch (cause) {
+    throw new NetworkError(cause)
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, 'The upload was rejected by storage.')
+  }
+}
+
 // ── Endpoints ───────────────────────────────────────────────────────────────
 
 export const api = {
@@ -253,6 +282,25 @@ export const api = {
     /** Polled by useNotificationToasts to surface events as they arrive. */
     list: (signal?: AbortSignal) =>
       request<NotificationView[]>('/notifications', { signal }),
+  },
+
+  kyc: {
+    /** The BVN is sent once, over this call, straight to the backend — never
+     * to Prembly directly from the browser, and never stored by this app. */
+    verifyBvn: (body: VerifyBvnRequest) =>
+      request<KycStatusResponse>('/kyc/verify-bvn', { method: 'POST', body }),
+  },
+
+  media: {
+    /** The file itself never comes through the API — presign returns a URL
+     * the browser PUTs the bytes to directly (see uploadToPresignedUrl). */
+    presign: (body: PresignUploadRequest) =>
+      request<PresignUploadResponse>('/media/presign', { method: 'POST', body }),
+
+    confirm: (body: ConfirmUploadRequest) =>
+      request<MediaItem>('/media/confirm', { method: 'POST', body }),
+
+    delete: (id: Uuid) => request<StatusResponse>(`/media/${id}`, { method: 'DELETE' }),
   },
 
   wallet: {
@@ -295,6 +343,15 @@ export const api = {
     /** Re-checks the transaction PIN server-side before moving any money. */
     contribute: (id: Uuid, body: TransactionPinRequest) =>
       request<StatusResponse>(`/ajo/${id}/contribute`, { method: 'POST', body }),
+
+    /** Group admin only. Stops all future contributions and joins — does not
+     * undo anything already paid out in past cycles. */
+    close: (id: Uuid) => request<StatusResponse>(`/ajo/${id}/close`, { method: 'POST' }),
+
+    /** Group admin only. The API rejects removing anyone whose payout is
+     * already due or in progress. */
+    removeMember: (groupId: Uuid, memberId: Uuid) =>
+      request<StatusResponse>(`/ajo/${groupId}/members/${memberId}/remove`, { method: 'POST' }),
   },
 
   bills: {

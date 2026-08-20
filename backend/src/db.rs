@@ -7,6 +7,102 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
+// ── KYC ───────────────────────────────────────────────────────────────────────
+
+/// Persists a BVN verification outcome. `bvn_hash` is only written on a
+/// verified outcome — a failed attempt (wrong BVN, provider rejection)
+/// leaves it NULL so the unique index only ever constrains BVNs that
+/// actually cleared verification.
+pub async fn persist_kyc_result(
+    pool: &PgPool,
+    user_id: Uuid,
+    verified: bool,
+    bvn_hash: Option<&str>,
+    reference: Option<&str>,
+    failure_reason: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let status = if verified { "verified" } else { "failed" };
+    let verified_at = if verified { Some(Utc::now()) } else { None };
+    let hash_to_store = if verified { bvn_hash } else { None };
+
+    sqlx::query(
+        "UPDATE users SET
+            kyc_status = $1,
+            kyc_verified_at = $2,
+            kyc_provider = 'prembly',
+            kyc_reference = $3,
+            kyc_failure_reason = $4,
+            bvn_hash = $5
+         WHERE id = $6"
+    )
+    .bind(status)
+    .bind(verified_at)
+    .bind(reference)
+    .bind(failure_reason)
+    .bind(hash_to_store)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+type KycRow = (String, Option<chrono::DateTime<Utc>>, Option<String>, Option<String>, Option<String>);
+
+pub async fn kyc_detail(pool: &PgPool, user_id: Uuid) -> Result<Option<shared::KycDetail>, sqlx::Error> {
+    let row: Option<KycRow> =
+        sqlx::query_as(
+            "SELECT kyc_status, kyc_verified_at, kyc_provider, kyc_reference, kyc_failure_reason
+             FROM users WHERE id = $1"
+        )
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+
+    Ok(row.map(|(status, verified_at, provider, reference, reason)| shared::KycDetail {
+        kyc_status: crate::store::parse_kyc_status(&status),
+        kyc_verified_at: verified_at,
+        kyc_provider: provider,
+        kyc_reference: reference,
+        kyc_failure_reason: reason,
+    }))
+}
+
+// ── Media ─────────────────────────────────────────────────────────────────────
+
+pub async fn persist_media(pool: &PgPool, media: &shared::MediaItem, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO media (id, user_id, object_key, purpose, content_type, size_bytes, public_url, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)"
+    )
+    .bind(media.id).bind(user_id).bind(&media.object_key).bind(&media.purpose)
+    .bind(&media.content_type).bind(media.size_bytes).bind(&media.public_url).bind(media.created_at)
+    .execute(pool).await?;
+    Ok(())
+}
+
+pub async fn set_avatar(pool: &PgPool, user_id: Uuid, avatar_url: Option<&str>) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET avatar_url = $1 WHERE id = $2")
+        .bind(avatar_url).bind(user_id)
+        .execute(pool).await?;
+    Ok(())
+}
+
+/// Returns the object key only when `media_id` both exists and belongs to
+/// `user_id` — the route handler never has to trust a caller-supplied
+/// ownership claim.
+pub async fn media_object_key_owned_by(pool: &PgPool, media_id: Uuid, user_id: Uuid) -> Option<String> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT object_key FROM media WHERE id = $1 AND user_id = $2"
+    )
+    .bind(media_id).bind(user_id)
+    .fetch_optional(pool).await.ok().flatten()
+}
+
+pub async fn delete_media_row(pool: &PgPool, media_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM media WHERE id = $1").bind(media_id).execute(pool).await?;
+    Ok(())
+}
+
 // ── Wallet ────────────────────────────────────────────────────────────────────
 
 // Not yet called. `services::wallet::debit_wallet` — the path ajo
@@ -382,6 +478,43 @@ pub async fn persist_ajo_join(pool: &sqlx::PgPool, group_id: uuid::Uuid, user_id
     .bind(group_id).bind(user_id).bind(position)
     .execute(pool).await?;
     Ok(())
+}
+
+pub async fn persist_ajo_close(pool: &sqlx::PgPool, group_id: uuid::Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE ajo_groups SET status = 'cancelled' WHERE id = $1")
+        .bind(group_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Mirrors `services::ajo::remove_member`'s in-memory renumbering: delete the
+/// member, then shift everyone after them down one position, then shrink
+/// member_count — one transaction, so a crash mid-way never leaves the
+/// rotation and the group's target size disagreeing.
+pub async fn persist_ajo_member_removal(
+    pool: &sqlx::PgPool,
+    group_id: uuid::Uuid,
+    removed_position: i32,
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("DELETE FROM ajo_members WHERE group_id = $1 AND payout_position = $2")
+        .bind(group_id).bind(removed_position)
+        .execute(&mut *tx).await?;
+
+    sqlx::query(
+        "UPDATE ajo_members SET payout_position = payout_position - 1
+         WHERE group_id = $1 AND payout_position > $2"
+    )
+    .bind(group_id).bind(removed_position)
+    .execute(&mut *tx).await?;
+
+    sqlx::query("UPDATE ajo_groups SET member_count = member_count - 1 WHERE id = $1")
+        .bind(group_id)
+        .execute(&mut *tx).await?;
+
+    tx.commit().await
 }
 
 pub async fn persist_ajo_contribution(pool: &sqlx::PgPool, group_id: uuid::Uuid, user_id: uuid::Uuid, cycle: u32, next_cycle: u32, completed: bool) -> Result<(), sqlx::Error> {

@@ -1,0 +1,65 @@
+#cloud-config
+# Bootstraps a fresh Debian 12 Hetzner server into something the deploy
+# workflow (.github/workflows/deploy.yml) can `docker compose up` on. Runs
+# once, on first boot, via hcloud_server.api.user_data in hetzner.tf.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - git
+  - curl
+  - ufw
+  - fail2ban
+  - ca-certificates
+  - gnupg
+
+users:
+  - name: deploy
+    groups: [docker, sudo]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - "${deploy_ssh_key}"
+
+# Root login over SSH is switched off below (runcmd) rather than here, since
+# cloud-init's own ssh_pwauth/disable_root keys land after packages are
+# already reachable via the image's default config on some providers.
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/99-hardening.conf
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      X11Forwarding no
+
+runcmd:
+  # Docker Engine + Compose plugin, from Docker's own apt repo (Debian's
+  # bundled version lags and Compose v2 isn't in it at all).
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - >
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc]
+    https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable"
+    > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  - systemctl enable --now docker
+
+  # App directory the deploy workflow rsyncs docker-compose.prod.yml and
+  # the env file into, and runs `docker compose` from.
+  - mkdir -p /opt/cowri
+  - chown deploy:deploy /opt/cowri
+
+  # Firewall is already enforced at the Hetzner network edge
+  # (infra/firewall.tf); ufw here is a second, host-level layer in case a
+  # server ever gets attached to a network without that firewall.
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+
+  - systemctl restart ssh
+  - systemctl enable fail2ban
+  - systemctl restart fail2ban
