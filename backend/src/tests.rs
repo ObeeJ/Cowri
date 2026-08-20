@@ -294,6 +294,37 @@ fn remove_member_rejects_admin_self_removal_and_past_receivers() {
     assert!(ajo::remove_member(&store, group.id, admin, m2).is_ok());
 }
 
+#[test]
+fn remove_member_rejects_someone_who_already_contributed_this_cycle() {
+    let store = test_store();
+    let admin = register_user(&store, "08077300001", "Admin8");
+    let m1    = register_user(&store, "08077300002", "M1c");
+    let m2    = register_user(&store, "08077300003", "M2c");
+
+    let group = ajo::create_group(&store, admin, CreateAjoRequest {
+        name: "Early payer".into(), contribution_kobo: 10_000,
+        frequency: AjoFrequency::Monthly, member_count: 3,
+    }).unwrap();
+    ajo::join_group(&store, group.id, m1).unwrap(); // position 1
+    ajo::join_group(&store, group.id, m2).unwrap(); // position 2, future
+
+    // m2's payout position is safely in the future, but everyone contributes
+    // every cycle regardless of whose turn it is — m2 pays into cycle 0
+    // (funding the admin's payout) before anyone tries to remove them.
+    wallet::credit_wallet(&store, m2, 100_000, "r1", "fund");
+    ajo::contribute(&store, group.id, m2, TEST_TXN_PIN).unwrap();
+
+    // Removing m2 now must be rejected — their contribution already moved
+    // money and can't be un-sent, and letting the removal through would
+    // shrink member_count while contributions_this_cycle still counts them,
+    // completing the cycle without m1 ever having to pay in.
+    let res = ajo::remove_member(&store, group.id, admin, m2);
+    assert!(res.unwrap_err().error.contains("already contributed this cycle"));
+
+    // m1, who hasn't contributed yet, remains removable.
+    assert!(ajo::remove_member(&store, group.id, admin, m1).is_ok());
+}
+
 // ── Bills ─────────────────────────────────────────────────────────────────────
 
 #[test]

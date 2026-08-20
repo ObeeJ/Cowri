@@ -393,10 +393,24 @@ pub async fn verify_bvn(req: Request) -> Response {
         (outcome.verified, outcome.failure_reason)
     };
 
-    let _ = db::persist_kyc_result(
+    // The in-memory status only ever moves once the durable write actually
+    // lands. If two concurrent requests raced past `bvn_already_claimed`
+    // above (a plain SELECT — not itself a lock) with the same BVN, the
+    // second's UPDATE here is the thing that actually loses: the unique
+    // index on bvn_hash rejects it. Treating that failure as "verified"
+    // anyway would let both accounts believe they'd claimed the same BVN
+    // until the process restarted and reloaded from Postgres.
+    if let Err(e) = db::persist_kyc_result(
         &state.db, user_id, verified,
         Some(&outcome.bvn_hash), outcome.reference.as_deref(), failure_reason.as_deref(),
-    ).await;
+    ).await {
+        let reason = if verified && e.as_database_error().is_some_and(|e| e.is_unique_violation()) {
+            "This BVN is already linked to another Cowri account"
+        } else {
+            "Could not save the verification result. Try again."
+        };
+        return ok(422, serde_json::json!({ "kyc_status": KycStatus::Failed, "error": reason }));
+    }
 
     let new_status = if verified { KycStatus::Verified } else { KycStatus::Failed };
     if let Some(u) = state.store.users.lock().unwrap().get_mut(&user_id) {
