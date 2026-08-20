@@ -123,6 +123,7 @@ pub fn contribute(store: &Store, group_id: Uuid, contributor_id: Uuid, transacti
         .get(&contributor_id).map(|u| u.name.clone()).unwrap_or_else(|| "A member".into());
 
     crate::services::wallet::stage_outbox_event(store, "ajo.contribution", serde_json::json!({
+        "user_id":           receiver_id,
         "receiver_email":    receiver_email,
         "receiver_name":     receiver_name,
         "contributor_name":  contributor_name,

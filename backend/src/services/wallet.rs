@@ -90,12 +90,16 @@ pub fn debit_wallet(
         status: TransactionStatus::Success, created_at: now,
     });
 
-    let email = store.users.lock().unwrap()
-        .get(&user_id).and_then(|u| u.email.clone()).unwrap_or_default();
+    let (email, name) = {
+        let users = store.users.lock().unwrap();
+        let user  = users.get(&user_id);
+        (user.and_then(|u| u.email.clone()).unwrap_or_default(),
+         user.map(|u| u.name.clone()).unwrap_or_default())
+    };
     stage_outbox(store, "wallet.debited", serde_json::json!({
-        "wallet_id": wallet_id, "amount_kobo": amount_kobo,
+        "user_id": user_id, "wallet_id": wallet_id, "amount_kobo": amount_kobo,
         "reference": reference, "running_balance_kobo": running_balance,
-        "email": email
+        "email": email, "name": name, "description": description,
     }));
 
     Ok(())
@@ -152,12 +156,16 @@ pub fn credit_wallet(
         status: TransactionStatus::Success, created_at: now,
     });
 
-    let email = store.users.lock().unwrap()
-        .get(&user_id).and_then(|u| u.email.clone()).unwrap_or_default();
+    let (email, name) = {
+        let users = store.users.lock().unwrap();
+        let user  = users.get(&user_id);
+        (user.and_then(|u| u.email.clone()).unwrap_or_default(),
+         user.map(|u| u.name.clone()).unwrap_or_default())
+    };
     stage_outbox(store, "wallet.credited", serde_json::json!({
-        "wallet_id": wallet_id, "amount_kobo": amount_kobo,
+        "user_id": user_id, "wallet_id": wallet_id, "amount_kobo": amount_kobo,
         "reference": reference, "running_balance_kobo": running_balance,
-        "email": email
+        "email": email, "name": name,
     }));
 }
 

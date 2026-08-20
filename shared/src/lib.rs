@@ -102,6 +102,18 @@ pub struct OutboxEvent {
 #[serde(rename_all = "snake_case")]
 pub enum OutboxStatus { Pending, Delivered, Failed }
 
+/// A user-facing notification, derived from an outbox event addressed to them.
+/// Not its own table — the outbox is already the durable, ordered record of
+/// what happened; this is just that record read back and worded for a person.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationView {
+    pub id:         Uuid,
+    pub kind:       String,
+    pub title:      String,
+    pub body:       String,
+    pub created_at: DateTime<Utc>,
+}
+
 // ── Ajo ───────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

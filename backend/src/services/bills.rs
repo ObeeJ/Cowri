@@ -116,6 +116,7 @@ pub fn pay_bill_share(store: &Store, bill_id: Uuid, user_id: Uuid, transaction_p
             .get(&bill_id).map(|b| b.title.clone()).unwrap_or_default();
 
         crate::services::wallet::stage_outbox_event(store, "bill.paid", serde_json::json!({
+            "user_id":       creator_id,
             "creator_email": creator_email,
             "creator_name":  creator_name,
             "payer_name":    payer_name,

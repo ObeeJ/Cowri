@@ -206,6 +206,18 @@ async fn deliver_event(event_type: &str, payload: &serde_json::Value) -> bool {
             }
             true
         }
+        "wallet.debited" => {
+            let email       = payload["email"].as_str().unwrap_or("");
+            let name        = payload["name"].as_str().unwrap_or("there");
+            let amount      = payload["amount_kobo"].as_i64().unwrap_or(0);
+            let balance     = payload["running_balance_kobo"].as_i64().unwrap_or(0);
+            let description = payload["description"].as_str().unwrap_or("A payment");
+            if !email.is_empty() {
+                let (subject, html, plain) = crate::email::wallet_debited_email(name, amount, balance, description);
+                send_email(email, subject, &html, &plain).await;
+            }
+            true
+        }
         "ajo.payout" => {
             let email  = payload["email"].as_str().unwrap_or("");
             let name   = payload["name"].as_str().unwrap_or("there");

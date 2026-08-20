@@ -166,6 +166,17 @@ export type HealthResponse = {
   version: string
 }
 
+/** A user-facing notification, derived server-side from an outbox event
+ * addressed to this account (money received or sent, a circle contribution,
+ * a bill share paid). */
+export type NotificationView = {
+  id: Uuid
+  kind: string
+  title: string
+  body: string
+  created_at: IsoDateTime
+}
+
 export type LedgerCheckResponse = {
   status: 'ok' | 'violations_found'
   checked: number

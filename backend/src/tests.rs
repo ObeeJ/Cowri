@@ -1,5 +1,5 @@
 use crate::store::Store;
-use crate::services::{auth, ajo, bills, wallet};
+use crate::services::{auth, ajo, bills, wallet, notifications};
 use shared::*;
 
 fn test_store() -> Store { Store::new() }
@@ -333,6 +333,25 @@ fn outbox_events_staged_not_delivered_inline() {
     assert!(outbox.len() >= 2);
     // All must be Pending — none delivered inline
     assert!(outbox.iter().all(|e| e.status == shared::OutboxStatus::Pending));
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+#[test]
+fn notifications_target_only_the_recipient() {
+    let store = test_store();
+    let alice = register_user(&store, "08066700001", "Alice");
+    let bob   = register_user(&store, "08066700002", "Bob");
+
+    wallet::credit_wallet(&store, alice, 50_000, "r1", "fund");
+    wallet::debit_wallet(&store, alice, 10_000, "r2", "spend", TEST_TXN_PIN).unwrap();
+
+    let alice_notifications = notifications::list_for_user(&store, alice);
+    let bob_notifications = notifications::list_for_user(&store, bob);
+
+    assert_eq!(alice_notifications.len(), 2, "credit and debit both notify Alice");
+    assert!(alice_notifications[0].kind == "wallet.debited", "newest first");
+    assert!(bob_notifications.is_empty(), "Bob's wallet never moved");
 }
 
 // ── Concurrency Stress Test ───────────────────────────────────────────────────
