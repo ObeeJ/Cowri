@@ -25,11 +25,12 @@
   --color-rule: #d9d3c5;
   --color-rule-strong: #b6ae9c;
 
-  /* One accent: deep teal-green, the colour of aged brass on a market scale. */
-  --color-accent: #0f5c48;
-  --color-accent-hover: #0a4335;
-  --color-accent-tint: #e2ece7;
-  --color-accent-rule: #a9c6bb;
+  /* One accent: the deep green of a banknote, on the same off-white the notes
+     themselves are printed on. */
+  --color-accent: #1e5631;
+  --color-accent-hover: #163f24;
+  --color-accent-tint: #e3ebe1;
+  --color-accent-rule: #aac7ac;
 
   /* One warning tone: fired clay. Used for debits, overdue, destructive. */
   --color-clay: #9d4526;
@@ -73,10 +74,10 @@
     --color-rule: #34312a;
     --color-rule-strong: #4c4840;
 
-    --color-accent: #5cb49a;
-    --color-accent-hover: #7cc7b0;
-    --color-accent-tint: #16261f;
-    --color-accent-rule: #2e4a40;
+    --color-accent: #6fbd7f;
+    --color-accent-hover: #8bcf99;
+    --color-accent-tint: #17241a;
+    --color-accent-rule: #304a35;
 
     --color-clay: #d08a6e;
     --color-clay-hover: #dfa287;

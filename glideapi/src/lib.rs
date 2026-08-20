@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf, pin::Pin, sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, Limited};
@@ -61,6 +61,7 @@ pub struct App {
     state:       Option<Arc<dyn std::any::Any + Send + Sync>>,
     openapi:     openapi::OpenApi,
     config:      Config,
+    static_dir:  Option<PathBuf>,
 }
 
 impl App {
@@ -71,7 +72,19 @@ impl App {
             state:       None,
             openapi:     openapi::OpenApi::new("GlideAPI", "0.1.0"),
             config:      Config::default(),
+            static_dir:  None,
         }
+    }
+
+    /// Serve a built single-page app for any `GET` request that doesn't match
+    /// an API route and doesn't start with `/v1`. A request for a path with a
+    /// file extension (`.js`, `.png`, ...) is served from `dir` if the file
+    /// exists there, or 404s if it doesn't — a missing asset is never papered
+    /// over with the app shell. A request for anything else falls back to
+    /// `dir/index.html`, so client-side routing works on a hard refresh.
+    pub fn serve_spa(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.static_dir = Some(dir.into());
+        self
     }
 
     pub fn config(mut self, cfg: Config) -> Self { self.config = cfg; self }
@@ -123,30 +136,41 @@ impl App {
         info!("📖 OpenAPI  http://{addr}/_openapi.json");
         info!("🖥️  Swagger  http://{addr}/_docs");
 
-        let router   = Arc::new(self.router);
-        let mws      = Arc::new(self.middlewares);
-        let state    = Arc::new(self.state);
-        let openapi  = Arc::new(serde_json::to_string_pretty(&self.openapi).unwrap());
-        let cfg      = Arc::new(self.config);
+        let router     = Arc::new(self.router);
+        let mws        = Arc::new(self.middlewares);
+        let state      = Arc::new(self.state);
+        let openapi    = Arc::new(serde_json::to_string_pretty(&self.openapi).unwrap());
+        let cfg        = Arc::new(self.config);
+        let static_dir = Arc::new(self.static_dir);
+
+        if let Some(dir) = static_dir.as_ref() {
+            if dir.join("index.html").is_file() {
+                info!("🖼️  Serving web client from {}", dir.display());
+            } else {
+                warn!("STATIC_DIR is set to {} but it has no index.html — serving API only", dir.display());
+            }
+        }
 
         loop {
             tokio::select! {
                 Ok((stream, peer)) = listener.accept() => {
-                    let router  = router.clone();
-                    let mws     = mws.clone();
-                    let state   = state.clone();
-                    let openapi = openapi.clone();
-                    let cfg     = cfg.clone();
+                    let router     = router.clone();
+                    let mws        = mws.clone();
+                    let state      = state.clone();
+                    let openapi    = openapi.clone();
+                    let cfg        = cfg.clone();
+                    let static_dir = static_dir.clone();
 
                     tokio::spawn(async move {
                         let io = TokioIo::new(stream);
                         let svc = service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
-                            let router  = router.clone();
-                            let mws     = mws.clone();
-                            let state   = state.clone();
-                            let openapi = openapi.clone();
-                            let cfg     = cfg.clone();
-                            let peer    = peer;
+                            let router     = router.clone();
+                            let mws        = mws.clone();
+                            let state      = state.clone();
+                            let openapi    = openapi.clone();
+                            let cfg        = cfg.clone();
+                            let static_dir = static_dir.clone();
+                            let peer       = peer;
 
                             async move {
                                 let method = req.method().to_string();
@@ -166,6 +190,17 @@ impl App {
                                 }
                                 if method == "GET" && path == "/_docs" {
                                     return Ok(html_resp(swagger_ui()));
+                                }
+
+                                // ── Web client (SPA) ─────────────────────
+                                // The API owns everything under /v1; anything else is the
+                                // web client's to serve, if one is configured.
+                                if method == "GET" && !path.starts_with("/v1") {
+                                    if let Some(dir) = static_dir.as_ref() {
+                                        if let Some(resp) = serve_static(dir, &path).await {
+                                            return Ok(resp);
+                                        }
+                                    }
                                 }
 
                                 // ── CORS preflight ───────────────────────
@@ -285,6 +320,70 @@ fn apply_cors(mut resp: hyper::Response<Full<Bytes>>, origin: &str, cfg: &Config
     headers.insert("access-control-allow-credentials", "true".parse().unwrap());
     headers.insert("vary",                             "Origin".parse().unwrap());
     resp
+}
+
+/// Resolve one GET request against a built SPA directory.
+///
+/// A path that maps to a real file on disk is served as-is. A path with a file
+/// extension that doesn't exist on disk is a genuinely missing asset and 404s.
+/// Anything else — the common case, a client-side route like `/dashboard` — is
+/// served the app shell (`index.html`), so a hard refresh on a deep link works.
+async fn serve_static(dir: &std::path::Path, req_path: &str) -> Option<hyper::Response<Full<Bytes>>> {
+    // No traversal outside the static directory, ever.
+    if req_path.contains("..") {
+        return None;
+    }
+
+    let rel = req_path.trim_start_matches('/');
+    let candidate = if rel.is_empty() { dir.join("index.html") } else { dir.join(rel) };
+
+    let is_file = tokio::fs::metadata(&candidate).await.map(|m| m.is_file()).unwrap_or(false);
+    if is_file {
+        let bytes = tokio::fs::read(&candidate).await.ok()?;
+        // Vite fingerprints everything under /assets/, so it's safe to cache
+        // those responses forever; nothing else gets that treatment.
+        let cache_control = if req_path.starts_with("/assets/") {
+            "public, max-age=31536000, immutable"
+        } else {
+            "no-cache"
+        };
+        return Some(static_resp(bytes, mime_for(&candidate), cache_control));
+    }
+
+    let last_segment = rel.rsplit('/').next().unwrap_or("");
+    if last_segment.contains('.') {
+        return None; // A real, missing asset — not a client-side route.
+    }
+
+    let index = dir.join("index.html");
+    let bytes = tokio::fs::read(&index).await.ok()?;
+    Some(static_resp(bytes, "text/html; charset=utf-8", "no-cache"))
+}
+
+fn mime_for(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()).unwrap_or("") {
+        "html"                => "text/html; charset=utf-8",
+        "js" | "mjs"          => "text/javascript; charset=utf-8",
+        "css"                 => "text/css; charset=utf-8",
+        "json" | "webmanifest" | "map" => "application/json; charset=utf-8",
+        "svg"                 => "image/svg+xml",
+        "png"                 => "image/png",
+        "ico"                 => "image/x-icon",
+        "txt"                 => "text/plain; charset=utf-8",
+        "woff2"               => "font/woff2",
+        "woff"                => "font/woff",
+        _                     => "application/octet-stream",
+    }
+}
+
+fn static_resp(body: Vec<u8>, content_type: &str, cache_control: &str) -> hyper::Response<Full<Bytes>> {
+    hyper::Response::builder()
+        .status(200)
+        .header("content-type", content_type)
+        .header("cache-control", cache_control)
+        .header("x-content-type-options", "nosniff")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap()
 }
 
 fn html_resp(body: &'static str) -> hyper::Response<Full<Bytes>> {

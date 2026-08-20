@@ -1,6 +1,6 @@
 import { chromium } from 'playwright'
 
-const BASE = 'http://localhost:4173'
+const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4173'
 const OUT = process.env.OUT_DIR
 
 const routes = [
