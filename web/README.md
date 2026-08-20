@@ -6,13 +6,16 @@ client-side ledger, no role it can grant itself.
 
 ```
 npm install
-cp .env.example .env      # point VITE_COWRI_API_URL at your API
 npm run dev               # http://localhost:5173
 ```
 
-The API only sends `Access-Control-Allow-Credentials` when the browser `Origin`
-matches its own `CORS_ORIGIN`, so set `CORS_ORIGIN=http://localhost:5173` on the
-backend or the session cookies will be dropped without an error you can see.
+That's the whole setup. `npm run dev` proxies `/v1` to `http://localhost:3000`
+(see `vite.config.ts`), so it talks to a locally running API with no `.env`,
+and no `CORS_ORIGIN` to configure on the API either — the proxy makes it look
+same-origin to the browser. `npm run build` produces the same same-origin call
+shape in production, because the backend serves this app's build itself (see
+`backend/src/main.rs`). `.env.example` documents the one case that needs an
+override: the client deployed separately from the API it talks to.
 
 ## Scripts
 
@@ -27,10 +30,21 @@ backend or the session cookies will be dropped without an error you can see.
 | `npm run smoke:app` | The same for the authenticated routes, against the mock API |
 
 The two smoke scripts need `dist/` built and `npm run preview` running. `smoke:app`
-also needs `npm run mock-api`. They are development aids, not a test suite: they
-catch a route that throws on render, and nothing finer.
+also needs `npm run mock-api`. `smoke` defaults to `http://localhost:4173`; set
+`SMOKE_BASE` to point it elsewhere — e.g. `SMOKE_BASE=http://localhost:3000 npm run smoke`
+to check the build the real backend is serving, once `cargo run -p backend` has
+picked it up. They are development aids, not a test suite: they catch a route
+that throws on render, and nothing finer.
 
 ## How this app talks to the API
+
+**Same origin, by default.** The backend serves this app's build (see
+`serve_spa` in `glideapi/src/lib.rs` and its use in `backend/src/main.rs`), so
+in production there is one origin, one cookie jar, and no CORS to configure.
+`VITE_COWRI_API_URL` only needs setting if this client is ever deployed
+separately from the API — a CDN in front of the app, a different host for the
+API — in which case set `CORS_ORIGIN` on the API to this app's origin too, or
+the session cookies will be dropped by the browser without a visible error.
 
 **Sessions are cookies, not tokens.** `POST /v1/auth/login` sets `access_token`
 and `refresh_token` as httpOnly, Secure, SameSite=Strict cookies and returns

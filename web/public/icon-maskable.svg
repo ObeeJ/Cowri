@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Cowri">
-  <rect width="512" height="512" fill="#0f5c48"/>
+  <rect width="512" height="512" fill="#1e5631"/>
   <g fill="none" stroke="#f4f1ea" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
     <path d="M256 140c62 0 100 60 100 139s-38 110-100 110-100-31-100-110 38-139 100-139Z"/>
     <path d="M256 209v131"/>

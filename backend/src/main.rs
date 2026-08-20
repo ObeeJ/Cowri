@@ -59,9 +59,16 @@ async fn main() {
 
     let state = AppState { store, db: pool };
 
+    // ── Web client (React, in web/) ───────────────────────────────────────────
+    // Serving it from this process means production needs no CORS setup and no
+    // second origin: the app and the API it talks to are the same host. Falls
+    // back to API-only if the client hasn't been built — `cargo run -p backend`
+    // works before anyone has run `npm run build` in web/.
+    let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "web/dist".into());
+
     tracing::info!(" Cowri API on http://0.0.0.0:3000");
 
-    App::new()
+    let mut app = App::new()
         .config(Config { cors_origin, ..Config::default() })
         .state(state)
         .route("POST", "/v1/auth/register",       routes::register)
@@ -96,7 +103,15 @@ async fn main() {
         .route("GET",  "/v1/admin/transactions",   routes::admin::list_transactions)
         .route("GET",  "/v1/admin/ajo",            routes::admin::list_all_ajo)
         .route("GET",  "/v1/admin/outbox",         routes::admin::outbox_status)
-        .route("POST", "/v1/admin/bootstrap",      routes::admin::bootstrap_admin)
-        .listen("0.0.0.0:3000")
-        .await;
+        .route("POST", "/v1/admin/bootstrap",      routes::admin::bootstrap_admin);
+
+    if std::path::Path::new(&static_dir).join("index.html").is_file() {
+        app = app.serve_spa(static_dir);
+    } else {
+        tracing::warn!(
+            "No built web client at {static_dir}/index.html — run `npm run build` in web/ to serve it. API-only for now."
+        );
+    }
+
+    app.listen("0.0.0.0:3000").await;
 }
