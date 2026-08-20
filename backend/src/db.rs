@@ -7,6 +7,66 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
+// ── KYC ───────────────────────────────────────────────────────────────────────
+
+/// Persists a BVN verification outcome. `bvn_hash` is only written on a
+/// verified outcome — a failed attempt (wrong BVN, provider rejection)
+/// leaves it NULL so the unique index only ever constrains BVNs that
+/// actually cleared verification.
+pub async fn persist_kyc_result(
+    pool: &PgPool,
+    user_id: Uuid,
+    verified: bool,
+    bvn_hash: Option<&str>,
+    reference: Option<&str>,
+    failure_reason: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let status = if verified { "verified" } else { "failed" };
+    let verified_at = if verified { Some(Utc::now()) } else { None };
+    let hash_to_store = if verified { bvn_hash } else { None };
+
+    sqlx::query(
+        "UPDATE users SET
+            kyc_status = $1,
+            kyc_verified_at = $2,
+            kyc_provider = 'prembly',
+            kyc_reference = $3,
+            kyc_failure_reason = $4,
+            bvn_hash = $5
+         WHERE id = $6"
+    )
+    .bind(status)
+    .bind(verified_at)
+    .bind(reference)
+    .bind(failure_reason)
+    .bind(hash_to_store)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+type KycRow = (String, Option<chrono::DateTime<Utc>>, Option<String>, Option<String>, Option<String>);
+
+pub async fn kyc_detail(pool: &PgPool, user_id: Uuid) -> Result<Option<shared::KycDetail>, sqlx::Error> {
+    let row: Option<KycRow> =
+        sqlx::query_as(
+            "SELECT kyc_status, kyc_verified_at, kyc_provider, kyc_reference, kyc_failure_reason
+             FROM users WHERE id = $1"
+        )
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+
+    Ok(row.map(|(status, verified_at, provider, reference, reason)| shared::KycDetail {
+        kyc_status: crate::store::parse_kyc_status(&status),
+        kyc_verified_at: verified_at,
+        kyc_provider: provider,
+        kyc_reference: reference,
+        kyc_failure_reason: reason,
+    }))
+}
+
 // ── Wallet ────────────────────────────────────────────────────────────────────
 
 // Not yet called. `services::wallet::debit_wallet` — the path ajo

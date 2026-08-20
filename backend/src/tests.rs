@@ -354,6 +354,20 @@ fn notifications_target_only_the_recipient() {
     assert!(bob_notifications.is_empty(), "Bob's wallet never moved");
 }
 
+// ── KYC ───────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn bvn_format_is_rejected_before_any_network_call() {
+    // Wrong length and non-digits must fail fast, without needing
+    // PREMBLY_API_KEY set or any network access — this is the guard that
+    // runs before the provider is ever contacted.
+    for bad in ["123", "", "12345678901234", "1234567890a"] {
+        let res = crate::services::kyc::verify_bvn(bad).await;
+        assert!(res.is_err());
+        assert!(res.unwrap_err().error.contains("11 digits"));
+    }
+}
+
 // ── Concurrency Stress Test ───────────────────────────────────────────────────
 
 #[test]

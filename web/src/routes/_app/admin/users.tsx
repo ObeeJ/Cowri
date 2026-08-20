@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { DataTable } from '~/components/domain/data-table'
 import { MoneyAmount } from '~/components/domain/money-amount'
+import { StatusPill } from '~/components/domain/status-pill'
 import { Badge } from '~/components/ui/display'
 import { Button } from '~/components/ui/button'
 import { Dialog } from '~/components/ui/dialog'
@@ -92,6 +93,12 @@ function AdminUsersPage() {
             header: 'Role',
             cell: (row) =>
               row.role === 'admin' ? <Badge tone="accent">Admin</Badge> : <Badge>Member</Badge>,
+          },
+          {
+            id: 'kyc',
+            header: 'KYC',
+            hideOnMobile: true,
+            cell: (row) => <StatusPill kind="kyc" status={row.kyc_status} />,
           },
           {
             id: 'balance',

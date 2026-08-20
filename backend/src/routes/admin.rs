@@ -78,6 +78,7 @@ pub async fn list_users(req: Request) -> Response {
             "name":           u.name,
             "phone":          u.phone,
             "role":           u.role,
+            "kyc_status":     u.kyc_status,
             "balance_kobo":   balance,
             "created_at":     u.created_at,
         })
@@ -110,10 +111,13 @@ pub async fn get_user(req: Request) -> Response {
             .rev().take(20).cloned().collect()
     };
 
+    let kyc_detail = crate::db::kyc_detail(&state.db, user_id).await.ok().flatten();
+
     ok_resp(200, serde_json::json!({
         "user":         user,
         "wallet":       wallet,
         "transactions": txns,
+        "kyc_detail":   kyc_detail,
     }))
 }
 
