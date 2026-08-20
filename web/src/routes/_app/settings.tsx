@@ -1,14 +1,18 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
+import { useState, type FormEvent } from 'react'
 import { PageHeader } from '~/components/domain/page-header'
+import { StatusPill } from '~/components/domain/status-pill'
 import { Badge } from '~/components/ui/display'
 import { Button } from '~/components/ui/button'
-import { Radio } from '~/components/ui/field'
+import { Field, Input, Radio } from '~/components/ui/field'
 import { ExternalIcon, ShieldIcon, SignOutIcon } from '~/components/icons'
 import { useAuth } from '~/lib/auth'
+import { useVerifyBvn } from '~/lib/api/hooks'
+import { ApiError, errorMessage, API_BASE_URL } from '~/lib/api/client'
 import { useTheme, type ThemePreference } from '~/lib/theme'
 import { formatDate } from '~/lib/format'
 import { formatPhone } from '~/components/ui/phone-input'
-import { API_BASE_URL } from '~/lib/api/client'
+import type { KycStatus } from '~/lib/api/types'
 
 export const Route = createFileRoute('/_app/settings')({
   component: SettingsPage,
@@ -52,6 +56,8 @@ function SettingsPage() {
           email, contact support.
         </p>
       </section>
+
+      <KycSection />
 
       <section className="panel mt-6 px-5 py-4">
         <h2 className="text-base text-ink">Security</h2>
@@ -127,6 +133,81 @@ function SettingsPage() {
         </dl>
       </section>
     </>
+  )
+}
+
+function isPlausibleBvn(bvn: string): boolean {
+  return /^\d{11}$/.test(bvn)
+}
+
+function KycSection() {
+  const { user, setUser } = useAuth()
+  const verifyBvn = useVerifyBvn()
+  const [bvn, setBvn] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  if (!user) return null
+  const canSubmit = user.kyc_status === 'unverified' || user.kyc_status === 'failed'
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    setError(null)
+    if (!isPlausibleBvn(bvn)) {
+      setError('Enter your 11-digit BVN.')
+      return
+    }
+    try {
+      const result = await verifyBvn.mutateAsync({ bvn })
+      setUser({ ...user!, kyc_status: result.kyc_status })
+      setBvn('')
+    } catch (caught) {
+      // A rejected verification (422) still carries a fresh kyc_status —
+      // reflect it rather than leaving the badge stuck on the old one.
+      if (caught instanceof ApiError && caught.status === 422) {
+        const body = caught.body as { kyc_status?: KycStatus } | undefined
+        if (body?.kyc_status) setUser({ ...user!, kyc_status: body.kyc_status })
+      }
+      setError(errorMessage(caught))
+    }
+  }
+
+  return (
+    <section className="panel mt-6 px-5 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-base text-ink">Identity verification</h2>
+        <StatusPill kind="kyc" status={user.kyc_status} />
+      </div>
+      <p className="mt-1 text-sm leading-6 text-ink-muted">
+        Verifying your BVN confirms it's really you — Cowri sends it once, straight to our
+        verification partner, and never stores the number itself.
+      </p>
+
+      {canSubmit ? (
+        <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3 sm:max-w-sm">
+          <Field label="Bank Verification Number" error={error} required>
+            <Input
+              value={bvn}
+              onChange={(event) => setBvn(event.target.value.replace(/\D/g, '').slice(0, 11))}
+              inputMode="numeric"
+              maxLength={11}
+              placeholder="22112345678"
+              autoComplete="off"
+            />
+          </Field>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={verifyBvn.isPending}
+            loadingText="Verifying"
+            className="self-start"
+          >
+            Verify BVN
+          </Button>
+        </form>
+      ) : user.kyc_status === 'verified' ? (
+        <p className="mt-3 text-[0.8125rem] leading-6 text-ink-faint">Your identity is verified.</p>
+      ) : null}
+    </section>
   )
 }
 

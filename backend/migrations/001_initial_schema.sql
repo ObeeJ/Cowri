@@ -5,15 +5,28 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ── Users ─────────────────────────────────────────────────────────────────────
 CREATE TABLE users (
-    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    name           TEXT        NOT NULL,
-    phone          TEXT        NOT NULL UNIQUE,
-    email          TEXT,
-    role           TEXT        NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
-    email_verified BOOLEAN     NOT NULL DEFAULT FALSE,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    name              TEXT        NOT NULL,
+    phone             TEXT        NOT NULL UNIQUE,
+    email             TEXT,
+    role              TEXT        NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
+    email_verified    BOOLEAN     NOT NULL DEFAULT FALSE,
+    -- KYC. Only a one-way hash of the BVN is ever stored, never the number
+    -- itself — Prembly is the system of record for the raw BVN, Cowri only
+    -- needs to know the outcome and (via the hash) that it hasn't already
+    -- been used to verify a different account.
+    kyc_status        TEXT        NOT NULL DEFAULT 'unverified'
+                                  CHECK (kyc_status IN ('unverified','pending','verified','failed')),
+    kyc_verified_at   TIMESTAMPTZ,
+    kyc_provider      TEXT,
+    kyc_reference     TEXT,
+    kyc_failure_reason TEXT,
+    bvn_hash          TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_users_phone ON users(phone);
+-- One verified BVN can back exactly one account.
+CREATE UNIQUE INDEX idx_users_bvn_hash ON users(bvn_hash) WHERE bvn_hash IS NOT NULL;
 
 -- ── Passwords (hashed) — the login credential ───────────────────────────────────
 CREATE TABLE passwords (

@@ -210,6 +210,15 @@ export function useResetPassword() {
   return useMutation({ mutationFn: api.auth.resetPassword })
 }
 
+// ── KYC ─────────────────────────────────────────────────────────────────────
+
+/** The caller is responsible for syncing `kyc_status` onto the cached user
+ * profile on success (via `useAuth().setUser`) — this hook only knows about
+ * the API, not the session. */
+export function useVerifyBvn() {
+  return useMutation({ mutationFn: api.kyc.verifyBvn })
+}
+
 // ── Admin ───────────────────────────────────────────────────────────────────
 
 export function useAdminDashboard() {

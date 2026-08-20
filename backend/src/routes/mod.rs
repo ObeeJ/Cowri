@@ -262,6 +262,59 @@ pub async fn list_notifications(req: Request) -> Response {
     ok(200, crate::services::notifications::list_for_user(&state.store, user_id))
 }
 
+// ── KYC ───────────────────────────────────────────────────────────────────────
+
+pub async fn verify_bvn(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let Json(body) = match Json::<VerifyBvnRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+
+    let current_status = match state.store.users.lock().unwrap().get(&user_id) {
+        Some(u) => u.kyc_status.clone(),
+        None => return err(404, "User not found"),
+    };
+    if let Err(e) = crate::services::kyc::require_not_already_verified(&current_status) {
+        return err(409, &e.error);
+    }
+
+    let outcome = match crate::services::kyc::verify_bvn(&body.bvn).await {
+        Ok(o)  => o,
+        Err(e) => return ok(502, e),
+    };
+
+    // A BVN that cleared Prembly's check but is already claimed by a
+    // different Cowri account still fails here — one verified identity,
+    // one account.
+    let (verified, failure_reason) = if outcome.verified
+        && crate::services::kyc::bvn_already_claimed(&state.db, &outcome.bvn_hash, user_id).await
+    {
+        (false, Some("This BVN is already linked to another Cowri account".to_string()))
+    } else {
+        (outcome.verified, outcome.failure_reason)
+    };
+
+    let _ = db::persist_kyc_result(
+        &state.db, user_id, verified,
+        Some(&outcome.bvn_hash), outcome.reference.as_deref(), failure_reason.as_deref(),
+    ).await;
+
+    let new_status = if verified { KycStatus::Verified } else { KycStatus::Failed };
+    if let Some(u) = state.store.users.lock().unwrap().get_mut(&user_id) {
+        u.kyc_status = new_status.clone();
+    }
+
+    if verified {
+        ok(200, KycStatusResponse { kyc_status: new_status })
+    } else {
+        ok(422, serde_json::json!({
+            "kyc_status": new_status,
+            "error": failure_reason.unwrap_or_else(|| "BVN could not be verified".into()),
+        }))
+    }
+}
+
 pub async fn get_wallet(req: Request) -> Response {
     let s       = match state(&req) { Ok(s) => s, Err(e) => return e };
     let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
