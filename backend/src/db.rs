@@ -67,6 +67,42 @@ pub async fn kyc_detail(pool: &PgPool, user_id: Uuid) -> Result<Option<shared::K
     }))
 }
 
+// ── Media ─────────────────────────────────────────────────────────────────────
+
+pub async fn persist_media(pool: &PgPool, media: &shared::MediaItem, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO media (id, user_id, object_key, purpose, content_type, size_bytes, public_url, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)"
+    )
+    .bind(media.id).bind(user_id).bind(&media.object_key).bind(&media.purpose)
+    .bind(&media.content_type).bind(media.size_bytes).bind(&media.public_url).bind(media.created_at)
+    .execute(pool).await?;
+    Ok(())
+}
+
+pub async fn set_avatar(pool: &PgPool, user_id: Uuid, avatar_url: Option<&str>) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET avatar_url = $1 WHERE id = $2")
+        .bind(avatar_url).bind(user_id)
+        .execute(pool).await?;
+    Ok(())
+}
+
+/// Returns the object key only when `media_id` both exists and belongs to
+/// `user_id` — the route handler never has to trust a caller-supplied
+/// ownership claim.
+pub async fn media_object_key_owned_by(pool: &PgPool, media_id: Uuid, user_id: Uuid) -> Option<String> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT object_key FROM media WHERE id = $1 AND user_id = $2"
+    )
+    .bind(media_id).bind(user_id)
+    .fetch_optional(pool).await.ok().flatten()
+}
+
+pub async fn delete_media_row(pool: &PgPool, media_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM media WHERE id = $1").bind(media_id).execute(pool).await?;
+    Ok(())
+}
+
 // ── Wallet ────────────────────────────────────────────────────────────────────
 
 // Not yet called. `services::wallet::debit_wallet` — the path ajo

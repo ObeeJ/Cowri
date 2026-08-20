@@ -467,6 +467,26 @@ async fn bvn_format_is_rejected_before_any_network_call() {
     }
 }
 
+// ── Media ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn presign_upload_rejects_bad_input_before_any_r2_call() {
+    use crate::services::media;
+    let uid = uuid::Uuid::new_v4();
+
+    let too_big = media::presign_upload(uid, "image/png", 20 * 1024 * 1024, "avatar");
+    assert!(too_big.unwrap_err().error.contains("10MB"));
+
+    let zero = media::presign_upload(uid, "image/png", 0, "avatar");
+    assert!(zero.is_err());
+
+    let bad_type = media::presign_upload(uid, "application/pdf", 1000, "avatar");
+    assert!(bad_type.unwrap_err().error.contains("JPEG, PNG or WebP"));
+
+    let bad_purpose = media::presign_upload(uid, "image/png", 1000, "not a valid purpose!");
+    assert!(bad_purpose.unwrap_err().error.contains("Invalid upload purpose"));
+}
+
 // ── Concurrency Stress Test ───────────────────────────────────────────────────
 
 #[test]

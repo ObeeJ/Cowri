@@ -24,6 +24,7 @@ pub struct User {
     pub role:           UserRole,
     pub email_verified: bool,
     pub kyc_status:     KycStatus,
+    pub avatar_url:     Option<String>,
     pub created_at:     DateTime<Utc>,
 }
 
@@ -227,6 +228,44 @@ pub struct TransactionPinRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VerifyBvnRequest {
     pub bvn: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PresignUploadRequest {
+    pub content_type: String,
+    pub size_bytes:   i64,
+    /// Namespaces the object key and lets the same upload flow serve more
+    /// than one use case — "avatars" today, others later — without a
+    /// separate endpoint per kind of media.
+    pub purpose:      String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PresignUploadResponse {
+    /// The client PUTs the file's bytes directly here — this API never
+    /// sees the file itself.
+    pub upload_url: String,
+    pub object_key: String,
+    pub public_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConfirmUploadRequest {
+    pub object_key:   String,
+    pub content_type: String,
+    pub size_bytes:   i64,
+    pub purpose:      String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaItem {
+    pub id:           Uuid,
+    pub object_key:   String,
+    pub purpose:      String,
+    pub content_type: String,
+    pub size_bytes:   i64,
+    pub public_url:   String,
+    pub created_at:   DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

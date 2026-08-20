@@ -13,7 +13,7 @@ import {
   useQueryClient,
   type UseQueryOptions,
 } from '@tanstack/react-query'
-import { ApiError, api, newIdempotencyKey } from './client'
+import { ApiError, api, newIdempotencyKey, uploadToPresignedUrl } from './client'
 import { queryKeys } from './keys'
 import type {
   CreateAjoRequest,
@@ -234,6 +234,33 @@ export function useForgotPassword() {
 
 export function useResetPassword() {
   return useMutation({ mutationFn: api.auth.resetPassword })
+}
+
+// ── Media ───────────────────────────────────────────────────────────────────
+
+/** Presigns, uploads directly to R2, then confirms — one call from the
+ * caller's point of view. */
+export function useUploadMedia() {
+  return useMutation({
+    mutationFn: async ({ file, purpose }: { file: File; purpose: string }) => {
+      const presigned = await api.media.presign({
+        content_type: file.type,
+        size_bytes: file.size,
+        purpose,
+      })
+      await uploadToPresignedUrl(presigned.upload_url, file)
+      return api.media.confirm({
+        object_key: presigned.object_key,
+        content_type: file.type,
+        size_bytes: file.size,
+        purpose,
+      })
+    },
+  })
+}
+
+export function useDeleteMedia() {
+  return useMutation({ mutationFn: (id: Uuid) => api.media.delete(id) })
 }
 
 // ── KYC ─────────────────────────────────────────────────────────────────────
