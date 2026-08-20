@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /wallet
+Disallow: /ajo
+Disallow: /bills
+Disallow: /settings
+Disallow: /admin

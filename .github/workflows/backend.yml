@@ -1,0 +1,75 @@
+name: Backend
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+env:
+  CARGO_TERM_COLOR: always
+  JWT_SECRET: "ci-test-secret-that-is-long-enough-32bytes"
+  PAYSTACK_SECRET_KEY: "sk_test_placeholder"
+  CORS_ORIGIN: "http://localhost:8080"
+  APP_URL: "http://localhost:3000"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cowri
+          POSTGRES_PASSWORD: cowri
+          POSTGRES_DB: cowri
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://cowri:cowri@localhost:5432/cowri
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --quiet
+
+      - name: Security audit
+        # RUSTSEC-2023-0071 (rsa: Marvin Attack timing side-channel) is a
+        # documented, deliberate exception, not an oversight. sqlx-macros-core
+        # depends on sqlx-mysql, sqlx-postgres and sqlx-sqlite unconditionally
+        # whenever the `macros` feature is enabled — regardless of which
+        # backend feature the facade crate actually uses — so query! can
+        # type-check against whatever driver a DATABASE_URL names. rsa is
+        # sqlx-mysql's auth-handshake dependency. This app only enables the
+        # `postgres` feature and never opens a MySQL connection, so the
+        # vulnerable code path is unreachable; there is also no fixed
+        # upstream rsa release to upgrade to instead. Re-evaluate if sqlx
+        # ever feature-gates sqlx-macros-core per backend, or a fix ships.
+        run: cargo audit --deny warnings --ignore RUSTSEC-2023-0071
+
+      - name: Clippy
+        run: cargo clippy -p backend --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test -p backend --verbose

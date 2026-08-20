@@ -1,0 +1,199 @@
+@import 'tailwindcss';
+
+/*
+  Cowri design tokens.
+
+  The visual language is a paper ledger: a warm off-white canvas, hairline rules
+  instead of shadows, and tabular numerals for every figure. Depth comes from
+  background steps and borders, never from blur or glow.
+*/
+
+@theme {
+  /* Surfaces. Never pure white, never pure black. */
+  --color-paper: #f4f1ea;
+  --color-paper-raised: #fbf9f5;
+  --color-paper-sunken: #eae5da;
+  --color-paper-inset: #e3ddd0;
+
+  /* Ink */
+  --color-ink: #1b1a17;
+  --color-ink-muted: #57534a;
+  --color-ink-faint: #837c6e;
+  --color-ink-inverse: #f8f6f1;
+
+  /* Rules. Two weights: hairline for structure, strong for emphasis. */
+  --color-rule: #d9d3c5;
+  --color-rule-strong: #b6ae9c;
+
+  /* One accent: the deep green of a banknote, on the same off-white the notes
+     themselves are printed on. */
+  --color-accent: #1e5631;
+  --color-accent-hover: #163f24;
+  --color-accent-tint: #e3ebe1;
+  --color-accent-rule: #aac7ac;
+
+  /* One warning tone: fired clay. Used for debits, overdue, destructive. */
+  --color-clay: #9d4526;
+  --color-clay-hover: #7f3619;
+  --color-clay-tint: #f3e5dd;
+  --color-clay-rule: #d9b4a1;
+
+  /* Radii by role, deliberately unequal. Panels are near-square, controls are
+     softened just enough to read as interactive, pills are fully round. */
+  --radius-panel: 2px;
+  --radius-control: 7px;
+  --radius-pill: 999px;
+
+  /* Type */
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --font-sans: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-numeric: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  --ease-ui: cubic-bezier(0.32, 0.72, 0.35, 1);
+}
+
+/* Dark theme. Same structure, inverted paper: ink-dyed board stock. */
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  :root.dark {
+    color-scheme: dark;
+
+    --color-paper: #14130f;
+    --color-paper-raised: #1d1b16;
+    --color-paper-sunken: #0e0d0a;
+    --color-paper-inset: #26241d;
+
+    --color-ink: #ece7db;
+    --color-ink-muted: #a49c8b;
+    --color-ink-faint: #7d7566;
+    --color-ink-inverse: #14130f;
+
+    --color-rule: #34312a;
+    --color-rule-strong: #4c4840;
+
+    --color-accent: #6fbd7f;
+    --color-accent-hover: #8bcf99;
+    --color-accent-tint: #17241a;
+    --color-accent-rule: #304a35;
+
+    --color-clay: #d08a6e;
+    --color-clay-hover: #dfa287;
+    --color-clay-tint: #2a1a12;
+    --color-clay-rule: #4d3225;
+  }
+
+  html {
+    background-color: var(--color-paper);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: -0.014em;
+  }
+
+  /* One visible focus treatment for the whole app. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 1px;
+  }
+
+  ::selection {
+    background: var(--color-accent-tint);
+    color: var(--color-ink);
+  }
+
+  /* Motion is restrained by default and removed entirely on request. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Every figure in the product uses this. Aligned columns, no ambiguity
+     between 0 and O, no reflow as digits change. */
+  .numeric {
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    letter-spacing: -0.02em;
+  }
+
+  /* A panel is a sheet of paper: flat fill, hairline rule, near-square corner. */
+  .panel {
+    background-color: var(--color-paper-raised);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-panel);
+  }
+
+  /* Ruled divider between rows of a ledger. */
+  .rule-b {
+    border-bottom: 1px solid var(--color-rule);
+  }
+
+  .label-caps {
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+
+  /* Skeleton shimmer, kept to a slow opacity pulse rather than a sliding sheen. */
+  .skeleton {
+    background-color: var(--color-paper-inset);
+    animation: cowri-pulse 1.6s var(--ease-ui) infinite;
+  }
+}
+
+@keyframes cowri-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes cowri-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes cowri-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
