@@ -107,8 +107,7 @@ impl App {
     pub fn mount_routes(mut self) -> Self {
         for r in ROUTES {
             self.openapi.add_route(r.method, r.path, &format!("{} {}", r.method, r.path));
-            let handler = r.handler;
-            self.router.add(r.method, r.path, move |req| handler(req));
+            self.router.add(r.method, r.path, r.handler);
         }
         self
     }

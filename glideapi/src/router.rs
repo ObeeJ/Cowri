@@ -40,8 +40,8 @@ impl Router {
 
             let mut params = HashMap::new();
             let matched = route.segments.iter().zip(incoming.iter()).all(|(seg, inc)| {
-                if seg.starts_with(':') {
-                    params.insert(seg[1..].to_string(), inc.to_string());
+                if let Some(name) = seg.strip_prefix(':') {
+                    params.insert(name.to_string(), inc.to_string());
                     true
                 } else {
                     seg == inc

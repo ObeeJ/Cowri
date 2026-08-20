@@ -80,7 +80,7 @@ fn refresh_token_single_use() {
 fn debit_insufficient_balance_rejected() {
     let store = test_store();
     let uid = register_user(&store, "08066666666", "Frank");
-    let res = wallet::debit_wallet(&store, uid, 100_00, "ref", "test");
+    let res = wallet::debit_wallet(&store, uid, 10_000, "ref", "test");
     assert!(res.is_err());
     assert!(res.unwrap_err().error.contains("Insufficient"));
 }
@@ -89,10 +89,10 @@ fn debit_insufficient_balance_rejected() {
 fn credit_then_debit_updates_balance() {
     let store = test_store();
     let uid = register_user(&store, "08077777777", "Grace");
-    wallet::credit_wallet(&store, uid, 500_00, "ref1", "top-up");
-    wallet::debit_wallet(&store, uid, 200_00, "ref2", "spend").unwrap();
+    wallet::credit_wallet(&store, uid, 50_000, "ref1", "top-up");
+    wallet::debit_wallet(&store, uid, 20_000, "ref2", "spend").unwrap();
     let w = wallet::get_wallet(&store, uid).unwrap();
-    assert_eq!(w.available_kobo, 300_00);
+    assert_eq!(w.available_kobo, 30_000);
 }
 
 // ── Ajo ───────────────────────────────────────────────────────────────────────
@@ -104,11 +104,11 @@ fn ajo_cycle_advances_after_all_contribute() {
     let member = register_user(&store, "08088888882", "Member");
 
     // Fund both wallets
-    wallet::credit_wallet(&store, admin,  1000_00, "r1", "fund");
-    wallet::credit_wallet(&store, member, 1000_00, "r2", "fund");
+    wallet::credit_wallet(&store, admin,  100_000, "r1", "fund");
+    wallet::credit_wallet(&store, member, 100_000, "r2", "fund");
 
     let group = ajo::create_group(&store, admin, CreateAjoRequest {
-        name: "Test Ajo".into(), contribution_kobo: 100_00,
+        name: "Test Ajo".into(), contribution_kobo: 10_000,
         frequency: AjoFrequency::Monthly, member_count: 2,
     }).unwrap();
 
@@ -127,11 +127,11 @@ fn ajo_duplicate_contribution_rejected() {
     let store = test_store();
     let admin  = register_user(&store, "08099999991", "Admin2");
     let member = register_user(&store, "08099999992", "Member2");
-    wallet::credit_wallet(&store, admin,  1000_00, "r1", "fund");
-    wallet::credit_wallet(&store, member, 1000_00, "r2", "fund");
+    wallet::credit_wallet(&store, admin,  100_000, "r1", "fund");
+    wallet::credit_wallet(&store, member, 100_000, "r2", "fund");
 
     let group = ajo::create_group(&store, admin, CreateAjoRequest {
-        name: "Solo".into(), contribution_kobo: 100_00,
+        name: "Solo".into(), contribution_kobo: 10_000,
         frequency: AjoFrequency::Monthly, member_count: 2,
     }).unwrap();
     ajo::join_group(&store, group.id, member).unwrap();
@@ -149,10 +149,10 @@ fn ajo_non_member_cannot_contribute() {
     let store = test_store();
     let admin   = register_user(&store, "08011100001", "Admin3");
     let outsider = register_user(&store, "08011100002", "Outsider");
-    wallet::credit_wallet(&store, outsider, 1000_00, "r", "fund");
+    wallet::credit_wallet(&store, outsider, 100_000, "r", "fund");
 
     let group = ajo::create_group(&store, admin, CreateAjoRequest {
-        name: "Private".into(), contribution_kobo: 100_00,
+        name: "Private".into(), contribution_kobo: 10_000,
         frequency: AjoFrequency::Monthly, member_count: 2,
     }).unwrap();
 
@@ -168,11 +168,11 @@ fn bill_creator_must_pay_own_share() {
     let store = test_store();
     let creator = register_user(&store, "08022200001", "Creator");
     let payer   = register_user(&store, "08022200002", "Payer");
-    wallet::credit_wallet(&store, creator, 500_00, "r1", "fund");
-    wallet::credit_wallet(&store, payer,   500_00, "r2", "fund");
+    wallet::credit_wallet(&store, creator, 50_000, "r1", "fund");
+    wallet::credit_wallet(&store, payer,   50_000, "r2", "fund");
 
     let bill = bills::create_bill(&store, creator, CreateBillRequest {
-        title: "Dinner".into(), total_kobo: 200_00,
+        title: "Dinner".into(), total_kobo: 20_000,
         participant_phones: vec!["08022200002".into()],
     }).unwrap();
 
@@ -184,7 +184,7 @@ fn bill_creator_must_pay_own_share() {
     // Creator pays
     bills::pay_bill_share(&store, bill.id, creator).unwrap();
     let w = wallet::get_wallet(&store, creator).unwrap();
-    assert_eq!(w.available_kobo, 400_00); // 500 - 100
+    assert_eq!(w.available_kobo, 40_000); // 500 - 100
 }
 
 #[test]
@@ -192,11 +192,11 @@ fn bill_settles_when_all_paid() {
     let store = test_store();
     let creator = register_user(&store, "08033300001", "C");
     let p2      = register_user(&store, "08033300002", "P2");
-    wallet::credit_wallet(&store, creator, 500_00, "r1", "fund");
-    wallet::credit_wallet(&store, p2,      500_00, "r2", "fund");
+    wallet::credit_wallet(&store, creator, 50_000, "r1", "fund");
+    wallet::credit_wallet(&store, p2,      50_000, "r2", "fund");
 
     let bill = bills::create_bill(&store, creator, CreateBillRequest {
-        title: "Lunch".into(), total_kobo: 200_00,
+        title: "Lunch".into(), total_kobo: 20_000,
         participant_phones: vec!["08033300002".into()],
     }).unwrap();
 
@@ -211,10 +211,10 @@ fn bill_settles_when_all_paid() {
 fn double_pay_rejected() {
     let store = test_store();
     let creator = register_user(&store, "08044400001", "D");
-    wallet::credit_wallet(&store, creator, 500_00, "r", "fund");
+    wallet::credit_wallet(&store, creator, 50_000, "r", "fund");
 
     let bill = bills::create_bill(&store, creator, CreateBillRequest {
-        title: "Solo".into(), total_kobo: 100_00,
+        title: "Solo".into(), total_kobo: 10_000,
         participant_phones: vec![],
     }).unwrap();
 
@@ -230,9 +230,9 @@ fn double_pay_rejected() {
 fn ledger_invariant_holds_after_credit_and_debit() {
     let store = test_store();
     let uid = register_user(&store, "08055500001", "Ledger");
-    wallet::credit_wallet(&store, uid, 1000_00, "ref-c1", "top-up");
-    wallet::credit_wallet(&store, uid, 500_00,  "ref-c2", "top-up");
-    wallet::debit_wallet(&store, uid, 300_00,   "ref-d1", "spend").unwrap();
+    wallet::credit_wallet(&store, uid, 100_000, "ref-c1", "top-up");
+    wallet::credit_wallet(&store, uid, 50_000,  "ref-c2", "top-up");
+    wallet::debit_wallet(&store, uid, 30_000,   "ref-d1", "spend").unwrap();
 
     let wallet_id = store.wallets.lock().unwrap().get(&uid).unwrap().id;
     wallet::assert_ledger_invariant(&store, wallet_id).expect("ledger invariant violated");
@@ -242,8 +242,8 @@ fn ledger_invariant_holds_after_credit_and_debit() {
 fn ledger_entries_are_append_only() {
     let store = test_store();
     let uid = register_user(&store, "08055500002", "Append");
-    wallet::credit_wallet(&store, uid, 200_00, "r1", "fund");
-    wallet::debit_wallet(&store, uid, 100_00, "r2", "spend").unwrap();
+    wallet::credit_wallet(&store, uid, 20_000, "r1", "fund");
+    wallet::debit_wallet(&store, uid, 10_000, "r2", "spend").unwrap();
 
     let ledger = store.ledger.lock().unwrap();
     // Exactly 2 entries — no updates, no deletes
@@ -258,8 +258,8 @@ fn ledger_entries_are_append_only() {
 fn outbox_events_staged_not_delivered_inline() {
     let store = test_store();
     let uid = register_user(&store, "08055500003", "Outbox");
-    wallet::credit_wallet(&store, uid, 500_00, "r1", "fund");
-    wallet::debit_wallet(&store, uid, 200_00, "r2", "spend").unwrap();
+    wallet::credit_wallet(&store, uid, 50_000, "r1", "fund");
+    wallet::debit_wallet(&store, uid, 20_000, "r2", "spend").unwrap();
 
     let outbox = store.outbox.lock().unwrap();
     // Both operations staged outbox events
