@@ -15,7 +15,8 @@ type AjoGroupRow = (Uuid, String, Uuid, i64, String, i32, i32, String, DateTime<
 #[derive(Clone, Default)]
 pub struct Store {
     pub users:              Arc<Mutex<HashMap<Uuid, User>>>,
-    pub pins:               Arc<Mutex<HashMap<Uuid, String>>>,
+    pub passwords:          Arc<Mutex<HashMap<Uuid, String>>>,
+    pub transaction_pins:   Arc<Mutex<HashMap<Uuid, String>>>,
     pub wallets:            Arc<Mutex<HashMap<Uuid, Wallet>>>,
     pub wallet_locks:       Arc<dashmap::DashMap<Uuid, Arc<Mutex<()>>>>,
     pub ledger:             Arc<Mutex<Vec<LedgerEntry>>>,
@@ -82,14 +83,19 @@ impl Store {
             )
             .fetch_all(pool).await?;
 
-        let pin_rows: Vec<(Uuid, String)> =
-            sqlx::query_as("SELECT user_id, hash FROM pins")
+        let password_rows: Vec<(Uuid, String)> =
+            sqlx::query_as("SELECT user_id, hash FROM passwords")
+            .fetch_all(pool).await?;
+
+        let transaction_pin_rows: Vec<(Uuid, String)> =
+            sqlx::query_as("SELECT user_id, hash FROM transaction_pins")
             .fetch_all(pool).await?;
 
         {
-            let mut users   = store.users.lock().unwrap();
-            let mut phones  = store.phone_index.lock().unwrap();
-            let mut pins    = store.pins.lock().unwrap();
+            let mut users           = store.users.lock().unwrap();
+            let mut phones          = store.phone_index.lock().unwrap();
+            let mut passwords       = store.passwords.lock().unwrap();
+            let mut transaction_pins = store.transaction_pins.lock().unwrap();
 
             for (id, name, phone, email, role, email_verified, created_at) in rows {
                 let user = User {
@@ -101,8 +107,11 @@ impl Store {
                 phones.insert(phone, id);
                 users.insert(id, user);
             }
-            for (user_id, hash) in pin_rows {
-                pins.insert(user_id, hash);
+            for (user_id, hash) in password_rows {
+                passwords.insert(user_id, hash);
+            }
+            for (user_id, hash) in transaction_pin_rows {
+                transaction_pins.insert(user_id, hash);
             }
         }
 

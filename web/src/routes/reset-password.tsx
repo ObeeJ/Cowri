@@ -1,35 +1,37 @@
 import { Link, createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { AuthShell } from '~/components/layout/auth-shell'
-import { Button } from '~/components/ui/button'
+import { Button, IconButton } from '~/components/ui/button'
 import { Field, Input } from '~/components/ui/field'
+import { EyeIcon, EyeOffIcon } from '~/components/icons'
 import { PinInput } from '~/components/ui/pin-input'
-import { useForgotPin, useResetPin } from '~/lib/api/hooks'
+import { useForgotPassword, useResetPassword } from '~/lib/api/hooks'
 import { errorMessage } from '~/lib/api/client'
 import { useToast } from '~/components/ui/toast'
 
 type ResetSearch = { email?: string }
 
-export const Route = createFileRoute('/reset-pin')({
+export const Route = createFileRoute('/reset-password')({
   validateSearch: (search: Record<string, unknown>): ResetSearch => ({
     email: typeof search.email === 'string' ? search.email : undefined,
   }),
-  component: ResetPinPage,
+  component: ResetPasswordPage,
 })
 
-type FormErrors = Partial<Record<'email' | 'otp' | 'pin' | 'confirmPin' | 'form', string>>
+type FormErrors = Partial<Record<'email' | 'otp' | 'password' | 'confirmPassword' | 'form', string>>
 
-function ResetPinPage() {
-  const { email: prefilled } = useSearch({ from: '/reset-pin' })
+function ResetPasswordPage() {
+  const { email: prefilled } = useSearch({ from: '/reset-password' })
   const navigate = useNavigate()
   const { toast } = useToast()
-  const resetPin = useResetPin()
-  const forgotPin = useForgotPin()
+  const resetPassword = useResetPassword()
+  const forgotPassword = useForgotPassword()
 
   const [email, setEmail] = useState(prefilled ?? '')
   const [otp, setOtp] = useState('')
-  const [pin, setPin] = useState('')
-  const [confirmPin, setConfirmPin] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [revealed, setRevealed] = useState(false)
   const [errors, setErrors] = useState<FormErrors>({})
 
   async function handleSubmit(event: FormEvent) {
@@ -37,14 +39,14 @@ function ResetPinPage() {
     const next: FormErrors = {}
     if (!email.includes('@')) next.email = 'Enter the email address on your account.'
     if (otp.length !== 6) next.otp = 'The reset code is 6 digits.'
-    if (pin.length < 4) next.pin = 'Choose a new PIN of 4 to 6 digits.'
-    if (confirmPin !== pin) next.confirmPin = 'The two PINs do not match.'
+    if (password.length < 8) next.password = 'Choose a password of at least 8 characters.'
+    if (confirmPassword !== password) next.confirmPassword = 'The two passwords do not match.'
     setErrors(next)
     if (Object.keys(next).length > 0) return
 
     try {
-      await resetPin.mutateAsync({ email: email.trim(), otp, new_pin: pin })
-      toast({ title: 'PIN changed', description: 'Sign in with your new PIN.', tone: 'success' })
+      await resetPassword.mutateAsync({ email: email.trim(), otp, new_password: password })
+      toast({ title: 'Password changed', description: 'Sign in with your new password.', tone: 'success' })
       await navigate({ to: '/login' })
     } catch (caught) {
       setErrors({ form: errorMessage(caught) })
@@ -54,14 +56,14 @@ function ResetPinPage() {
 
   return (
     <AuthShell
-      title="Set a new PIN"
-      description="Enter the code from your email, then choose the PIN you will use for payments."
+      title="Set a new password"
+      description="Enter the code from your email, then choose the password you will sign in with."
       footer={
         <>
           Need a new code?{' '}
           <button
             type="button"
-            onClick={() => void forgotPin.mutateAsync({ email: email.trim() })}
+            onClick={() => void forgotPassword.mutateAsync({ email: email.trim() })}
             className="cursor-pointer font-medium text-accent underline underline-offset-4"
           >
             Send another
@@ -96,23 +98,33 @@ function ResetPinPage() {
           />
         </Field>
 
-        <Field label="New PIN" hint="4 to 6 digits." error={errors.pin} required>
-          <PinInput
-            label="New PIN"
-            secret
-            value={pin}
-            onValueChange={setPin}
-            invalid={Boolean(errors.pin)}
+        <Field label="New password" hint="At least 8 characters, with letters and numbers." error={errors.password} required>
+          <Input
+            type={revealed ? 'text' : 'password'}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="new-password"
+            invalid={Boolean(errors.password)}
+            suffix={
+              <IconButton
+                type="button"
+                label={revealed ? 'Hide password' : 'Show password'}
+                size="sm"
+                onClick={() => setRevealed((current) => !current)}
+              >
+                {revealed ? <EyeOffIcon size={18} /> : <EyeIcon size={18} />}
+              </IconButton>
+            }
           />
         </Field>
 
-        <Field label="Confirm new PIN" error={errors.confirmPin} required>
-          <PinInput
-            label="Confirm new PIN"
-            secret
-            value={confirmPin}
-            onValueChange={setConfirmPin}
-            invalid={Boolean(errors.confirmPin)}
+        <Field label="Confirm new password" error={errors.confirmPassword} required>
+          <Input
+            type={revealed ? 'text' : 'password'}
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            autoComplete="new-password"
+            invalid={Boolean(errors.confirmPassword)}
           />
         </Field>
 
@@ -130,10 +142,10 @@ function ResetPinPage() {
           variant="primary"
           size="lg"
           fullWidth
-          loading={resetPin.isPending}
-          loadingText="Saving your new PIN"
+          loading={resetPassword.isPending}
+          loadingText="Saving your new password"
         >
-          Save new PIN
+          Save new password
         </Button>
       </form>
     </AuthShell>

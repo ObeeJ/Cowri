@@ -1,8 +1,9 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { AuthShell } from '~/components/layout/auth-shell'
-import { Button } from '~/components/ui/button'
+import { Button, IconButton } from '~/components/ui/button'
 import { Field, Input } from '~/components/ui/field'
+import { EyeIcon, EyeOffIcon } from '~/components/icons'
 import { PhoneInput, isPlausiblePhone } from '~/components/ui/phone-input'
 import { PinInput } from '~/components/ui/pin-input'
 import { useRegister } from '~/lib/api/hooks'
@@ -13,7 +14,16 @@ export const Route = createFileRoute('/register')({
   component: RegisterPage,
 })
 
-type FormErrors = Partial<Record<'name' | 'phone' | 'email' | 'pin' | 'confirmPin' | 'form', string>>
+type FormErrors = Partial<
+  Record<
+    'name' | 'phone' | 'email' | 'password' | 'confirmPassword' | 'transactionPin' | 'confirmTransactionPin' | 'form',
+    string
+  >
+>
+
+function isStrongPassword(password: string): boolean {
+  return password.length >= 8 && /[a-zA-Z]/.test(password) && /[0-9]/.test(password)
+}
 
 function RegisterPage() {
   const navigate = useNavigate()
@@ -23,8 +33,11 @@ function RegisterPage() {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
-  const [pin, setPin] = useState('')
-  const [confirmPin, setConfirmPin] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [revealed, setRevealed] = useState(false)
+  const [transactionPin, setTransactionPin] = useState('')
+  const [confirmTransactionPin, setConfirmTransactionPin] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
 
   function validate(): FormErrors {
@@ -37,8 +50,14 @@ function RegisterPage() {
     if (!email.includes('@') || email.trim().length === 0 || email.length > 254) {
       next.email = 'Enter an email address you can open right now.'
     }
-    if (pin.length < 4) next.pin = 'Choose a PIN of 4 to 6 digits.'
-    if (confirmPin !== pin) next.confirmPin = 'The two PINs do not match.'
+    if (!isStrongPassword(password)) {
+      next.password = 'At least 8 characters, with letters and numbers.'
+    }
+    if (confirmPassword !== password) next.confirmPassword = 'The two passwords do not match.'
+    if (transactionPin.length < 4) next.transactionPin = 'Choose a transaction PIN of 4 to 6 digits.'
+    if (confirmTransactionPin !== transactionPin) {
+      next.confirmTransactionPin = 'The two PINs do not match.'
+    }
     return next
   }
 
@@ -49,7 +68,13 @@ function RegisterPage() {
     if (Object.keys(nextErrors).length > 0) return
 
     try {
-      await register.mutateAsync({ name: name.trim(), phone, email: email.trim(), pin })
+      await register.mutateAsync({
+        name: name.trim(),
+        phone,
+        email: email.trim(),
+        password,
+        transaction_pin: transactionPin,
+      })
       toast({
         title: 'Account created',
         description: 'We sent a 6 digit code to your email address.',
@@ -64,7 +89,7 @@ function RegisterPage() {
   return (
     <AuthShell
       title="Create your Cowri account"
-      description="You will need an email address to confirm the account, and a PIN you can remember for payments."
+      description="You will need an email address to confirm the account, a password to sign in with, and a separate PIN you'll enter to approve payments."
       footer={
         <>
           Already have an account?{' '}
@@ -105,25 +130,65 @@ function RegisterPage() {
           />
         </Field>
 
-        <Field label="Choose a PIN" hint="4 to 6 digits." error={errors.pin} required>
-          <PinInput
-            label="Choose a PIN"
-            secret
-            length={4}
-            value={pin}
-            onValueChange={setPin}
-            invalid={Boolean(errors.pin)}
+        <Field
+          label="Password"
+          hint="At least 8 characters, with letters and numbers."
+          error={errors.password}
+          required
+        >
+          <Input
+            type={revealed ? 'text' : 'password'}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="new-password"
+            invalid={Boolean(errors.password)}
+            suffix={
+              <IconButton
+                type="button"
+                label={revealed ? 'Hide password' : 'Show password'}
+                size="sm"
+                onClick={() => setRevealed((current) => !current)}
+              >
+                {revealed ? <EyeOffIcon size={18} /> : <EyeIcon size={18} />}
+              </IconButton>
+            }
           />
         </Field>
 
-        <Field label="Confirm your PIN" error={errors.confirmPin} required>
+        <Field label="Confirm password" error={errors.confirmPassword} required>
+          <Input
+            type={revealed ? 'text' : 'password'}
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            autoComplete="new-password"
+            invalid={Boolean(errors.confirmPassword)}
+          />
+        </Field>
+
+        <Field
+          label="Transaction PIN"
+          hint="4 to 6 digits. You'll re-enter this to approve every payment — separate from your password, so a stolen session alone can never move money."
+          error={errors.transactionPin}
+          required
+        >
           <PinInput
-            label="Confirm your PIN"
+            label="Transaction PIN"
             secret
             length={4}
-            value={confirmPin}
-            onValueChange={setConfirmPin}
-            invalid={Boolean(errors.confirmPin)}
+            value={transactionPin}
+            onValueChange={setTransactionPin}
+            invalid={Boolean(errors.transactionPin)}
+          />
+        </Field>
+
+        <Field label="Confirm transaction PIN" error={errors.confirmTransactionPin} required>
+          <PinInput
+            label="Confirm transaction PIN"
+            secret
+            length={4}
+            value={confirmTransactionPin}
+            onValueChange={setConfirmTransactionPin}
+            invalid={Boolean(errors.confirmTransactionPin)}
           />
         </Field>
 

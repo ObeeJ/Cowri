@@ -38,7 +38,7 @@ export type AuthContextValue = {
   isAdmin: boolean
   signIn: (credentials: LoginRequest) => Promise<{ user: User; wallet: Wallet }>
   signOut: () => Promise<void>
-  /** Replaces the cached profile, e.g. after a PIN reset changes nothing else. */
+  /** Replaces the cached profile, e.g. after a password reset changes nothing else. */
   setUser: (user: User) => void
 }
 

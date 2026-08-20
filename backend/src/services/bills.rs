@@ -58,7 +58,7 @@ pub fn create_bill(store: &Store, creator_id: Uuid, req: CreateBillRequest) -> R
     Ok(bill)
 }
 
-pub fn pay_bill_share(store: &Store, bill_id: Uuid, user_id: Uuid) -> Result<(), ApiError> {
+pub fn pay_bill_share(store: &Store, bill_id: Uuid, user_id: Uuid, transaction_pin: &str) -> Result<(), ApiError> {
     let share_kobo = {
         let mut participants = store.bill_participants.lock().unwrap();
         let p = participants.get_mut(&(bill_id, user_id))
@@ -69,7 +69,17 @@ pub fn pay_bill_share(store: &Store, bill_id: Uuid, user_id: Uuid) -> Result<(),
     };
 
     let reference = format!("bill-{}-{}", bill_id, user_id);
-    debit_wallet(store, user_id, share_kobo, &reference, "Bill split payment")?;
+    if let Err(e) = debit_wallet(store, user_id, share_kobo, &reference, "Bill split payment", transaction_pin) {
+        // The debit failed (insufficient funds, wrong transaction PIN) — undo the
+        // optimistic `paid = true` set above so the share is still payable. The
+        // set-then-rollback (rather than check-then-set-after) is deliberate: it's
+        // what keeps two concurrent calls for the same participant from both
+        // reading `paid == false` and both debiting the wallet.
+        if let Some(p) = store.bill_participants.lock().unwrap().get_mut(&(bill_id, user_id)) {
+            p.paid = false;
+        }
+        return Err(e);
+    }
 
     let creator_id = store.bills.lock().unwrap().get(&bill_id)
         .map(|b| b.creator_id)
@@ -106,6 +116,7 @@ pub fn pay_bill_share(store: &Store, bill_id: Uuid, user_id: Uuid) -> Result<(),
             .get(&bill_id).map(|b| b.title.clone()).unwrap_or_default();
 
         crate::services::wallet::stage_outbox_event(store, "bill.paid", serde_json::json!({
+            "user_id":       creator_id,
             "creator_email": creator_email,
             "creator_name":  creator_name,
             "payer_name":    payer_name,

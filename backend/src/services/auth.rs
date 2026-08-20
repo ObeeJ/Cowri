@@ -147,9 +147,36 @@ fn validate_email(email: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
-fn validate_pin(pin: &str) -> Result<(), ApiError> {
+/// Login credential — a real password, not a short numeric PIN.
+fn validate_password(password: &str) -> Result<(), ApiError> {
+    if password.len() < 8 || password.len() > 72 {
+        return Err(ApiError { error: "Password must be 8–72 characters".into() });
+    }
+    let has_letter = password.chars().any(|c| c.is_alphabetic());
+    let has_digit  = password.chars().any(|c| c.is_ascii_digit());
+    if !has_letter || !has_digit {
+        return Err(ApiError { error: "Password must contain both letters and numbers".into() });
+    }
+    Ok(())
+}
+
+/// Transaction PIN — re-checked before any money-moving action (wallet debit,
+/// ajo contribution, bill payment). Deliberately separate from the login
+/// password: a stolen session cookie alone can't move money.
+fn validate_transaction_pin(pin: &str) -> Result<(), ApiError> {
     if pin.len() < 4 || pin.len() > 6 || !pin.chars().all(|c| c.is_ascii_digit()) {
-        return Err(ApiError { error: "PIN must be 4–6 digits".into() });
+        return Err(ApiError { error: "Transaction PIN must be 4–6 digits".into() });
+    }
+    Ok(())
+}
+
+/// Verify a transaction PIN against its stored hash. Called from the wallet
+/// service before any debit — the one place all money-out paths converge.
+pub fn verify_transaction_pin(store: &Store, user_id: Uuid, pin: &str) -> Result<(), ApiError> {
+    let hashed = store.transaction_pins.lock().unwrap().get(&user_id).cloned()
+        .ok_or(ApiError { error: "Invalid transaction PIN".into() })?;
+    if !bcrypt::verify(pin, &hashed).unwrap_or(false) {
+        return Err(ApiError { error: "Invalid transaction PIN".into() });
     }
     Ok(())
 }
@@ -230,7 +257,8 @@ pub fn register(store: &Store, req: RegisterRequest) -> Result<AuthTokens, ApiEr
     validate_name(&req.name)?;
     validate_phone(&req.phone)?;
     validate_email(&req.email)?;
-    validate_pin(&req.pin)?;
+    validate_password(&req.password)?;
+    validate_transaction_pin(&req.transaction_pin)?;
 
     let phone = req.phone.trim().to_string();
     let email = req.email.trim().to_lowercase();
@@ -262,14 +290,17 @@ pub fn register(store: &Store, req: RegisterRequest) -> Result<AuthTokens, ApiEr
     };
 
     // bcrypt cost 12 — OWASP minimum recommendation
-    let hashed = bcrypt::hash(&req.pin, 12)
+    let password_hash = bcrypt::hash(&req.password, 12)
+        .map_err(|_| ApiError { error: "Registration failed".into() })?;
+    let transaction_pin_hash = bcrypt::hash(&req.transaction_pin, 12)
         .map_err(|_| ApiError { error: "Registration failed".into() })?;
 
     phones.insert(phone, user_id);
     drop(phones);
 
     store.users.lock().unwrap().insert(user_id, user.clone());
-    store.pins.lock().unwrap().insert(user_id, hashed);
+    store.passwords.lock().unwrap().insert(user_id, password_hash);
+    store.transaction_pins.lock().unwrap().insert(user_id, transaction_pin_hash);
     store.wallets.lock().unwrap().insert(user_id, wallet.clone());
 
     // Generate and store OTP — caller must send it via email
@@ -283,7 +314,6 @@ pub fn register(store: &Store, req: RegisterRequest) -> Result<AuthTokens, ApiEr
 
 pub fn login(store: &Store, req: LoginRequest) -> Result<AuthTokens, ApiError> {
     validate_phone(&req.phone)?;
-    validate_pin(&req.pin)?;
 
     let phone = req.phone.trim().to_string();
 
@@ -292,15 +322,15 @@ pub fn login(store: &Store, req: LoginRequest) -> Result<AuthTokens, ApiError> {
     let user_id = {
         let phones = store.phone_index.lock().unwrap();
         phones.get(&phone).copied()
-            .ok_or(ApiError { error: "Invalid phone or PIN".into() })?
+            .ok_or(ApiError { error: "Invalid phone or password".into() })?
     };
 
-    let hashed = store.pins.lock().unwrap().get(&user_id).cloned()
-        .ok_or(ApiError { error: "Invalid phone or PIN".into() })?;
+    let hashed = store.passwords.lock().unwrap().get(&user_id).cloned()
+        .ok_or(ApiError { error: "Invalid phone or password".into() })?;
 
-    if !bcrypt::verify(&req.pin, &hashed).unwrap_or(false) {
+    if !bcrypt::verify(&req.password, &hashed).unwrap_or(false) {
         record_failed_attempt(store, &phone);
-        return Err(ApiError { error: "Invalid phone or PIN".into() });
+        return Err(ApiError { error: "Invalid phone or password".into() });
     }
 
     clear_attempts(store, &phone);
@@ -323,8 +353,8 @@ pub fn login(store: &Store, req: LoginRequest) -> Result<AuthTokens, ApiError> {
     Ok(AuthTokens { access_token, refresh_token, user, wallet, otp: None })
 }
 
-/// Initiate PIN reset — generates OTP keyed on email, returns OTP for email dispatch
-pub fn forgot_pin(store: &Store, email: &str) -> Result<(String, String), ApiError> {
+/// Initiate password reset — generates OTP keyed on email, returns OTP for email dispatch
+pub fn forgot_password(store: &Store, email: &str) -> Result<(String, String), ApiError> {
     // Find user by email
     let (user_id, name) = {
         let users = store.users.lock().unwrap();
@@ -338,9 +368,9 @@ pub fn forgot_pin(store: &Store, email: &str) -> Result<(String, String), ApiErr
     Ok((otp, name))
 }
 
-/// Complete PIN reset — verify OTP then update hashed PIN
-pub fn reset_pin(store: &Store, req: ResetPinRequest) -> Result<(), ApiError> {
-    validate_pin(&req.new_pin)?;
+/// Complete password reset — verify OTP then update hashed password
+pub fn reset_password(store: &Store, req: ResetPasswordRequest) -> Result<(), ApiError> {
+    validate_password(&req.new_password)?;
 
     // Verify OTP keyed on reset namespace
     verify_otp(store, &format!("reset:{}", req.email), &req.otp)?;
@@ -352,9 +382,9 @@ pub fn reset_pin(store: &Store, req: ResetPinRequest) -> Result<(), ApiError> {
         .map(|u| u.id)
         .ok_or(ApiError { error: "User not found".into() })?;
 
-    let hashed = bcrypt::hash(&req.new_pin, 12)
+    let hashed = bcrypt::hash(&req.new_password, 12)
         .map_err(|_| ApiError { error: "Reset failed".into() })?;
 
-    store.pins.lock().unwrap().insert(user_id, hashed);
+    store.passwords.lock().unwrap().insert(user_id, hashed);
     Ok(())
 }
