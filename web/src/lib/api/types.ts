@@ -61,7 +61,7 @@ export type Transaction = {
 }
 
 export type AjoFrequency = 'daily' | 'weekly' | 'monthly'
-export type AjoStatus = 'active' | 'completed' | 'paused'
+export type AjoStatus = 'active' | 'completed' | 'paused' | 'cancelled'
 
 export type AjoGroup = {
   id: Uuid

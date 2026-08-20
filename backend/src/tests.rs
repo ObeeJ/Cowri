@@ -195,6 +195,105 @@ fn ajo_contribute_rejects_wrong_transaction_pin() {
     assert!(res.unwrap_err().error.contains("transaction PIN"));
 }
 
+// ── Circle supervision ──────────────────────────────────────────────────────────
+
+#[test]
+fn close_group_is_admin_only_and_blocks_future_activity() {
+    let store = test_store();
+    let admin  = register_user(&store, "08077000001", "Admin5");
+    let member = register_user(&store, "08077000002", "Member5");
+    let outsider = register_user(&store, "08077000003", "Outsider5");
+
+    let group = ajo::create_group(&store, admin, CreateAjoRequest {
+        name: "Closeable".into(), contribution_kobo: 10_000,
+        frequency: AjoFrequency::Monthly, member_count: 2,
+    }).unwrap();
+    ajo::join_group(&store, group.id, member).unwrap();
+
+    // A non-admin can't close it.
+    let res = ajo::close_group(&store, group.id, member);
+    assert!(res.unwrap_err().error.contains("Only the group admin"));
+
+    // The admin can.
+    ajo::close_group(&store, group.id, admin).unwrap();
+    let updated = store.ajo_groups.lock().unwrap().get(&group.id).cloned().unwrap();
+    assert_eq!(updated.status, AjoStatus::Cancelled);
+
+    // Closed means closed — no further joins or contributions.
+    let join_res = ajo::join_group(&store, group.id, outsider);
+    assert!(join_res.unwrap_err().error.contains("not active"));
+    wallet::credit_wallet(&store, member, 100_000, "r", "fund");
+    let contribute_res = ajo::contribute(&store, group.id, member, TEST_TXN_PIN);
+    assert!(contribute_res.unwrap_err().error.contains("not active"));
+
+    // Closing an already-closed circle is rejected, not a silent no-op.
+    let res = ajo::close_group(&store, group.id, admin);
+    assert!(res.unwrap_err().error.contains("not active"));
+}
+
+#[test]
+fn remove_member_renumbers_the_remaining_rotation() {
+    let store = test_store();
+    let admin = register_user(&store, "08077100001", "Admin6");
+    let m1    = register_user(&store, "08077100002", "M1");
+    let m2    = register_user(&store, "08077100003", "M2");
+
+    let group = ajo::create_group(&store, admin, CreateAjoRequest {
+        name: "Trio".into(), contribution_kobo: 10_000,
+        frequency: AjoFrequency::Monthly, member_count: 3,
+    }).unwrap();
+    ajo::join_group(&store, group.id, m1).unwrap(); // position 1
+    ajo::join_group(&store, group.id, m2).unwrap(); // position 2
+
+    // Remove the middle member (position 1) — m2 should shift down to 1.
+    let removed_position = ajo::remove_member(&store, group.id, admin, m1).unwrap();
+    assert_eq!(removed_position, 1);
+
+    let members = store.ajo_members.lock().unwrap();
+    assert!(!members.contains_key(&(group.id, m1)), "removed member is gone");
+    assert_eq!(members.get(&(group.id, m2)).unwrap().payout_position, 1, "m2 shifted down");
+    drop(members);
+
+    let updated = store.ajo_groups.lock().unwrap().get(&group.id).cloned().unwrap();
+    assert_eq!(updated.member_count, 2, "target size shrank to match");
+}
+
+#[test]
+fn remove_member_rejects_admin_self_removal_and_past_receivers() {
+    let store = test_store();
+    let admin = register_user(&store, "08077200001", "Admin7");
+    let m1    = register_user(&store, "08077200002", "M1b");
+    let m2    = register_user(&store, "08077200003", "M2b");
+
+    let group = ajo::create_group(&store, admin, CreateAjoRequest {
+        name: "Guarded".into(), contribution_kobo: 10_000,
+        frequency: AjoFrequency::Monthly, member_count: 3,
+    }).unwrap();
+    ajo::join_group(&store, group.id, m1).unwrap(); // position 1
+    ajo::join_group(&store, group.id, m2).unwrap(); // position 2
+
+    // Admin can't remove themselves.
+    let res = ajo::remove_member(&store, group.id, admin, admin);
+    assert!(res.unwrap_err().error.contains("cannot remove themselves"));
+
+    // Complete cycle 0: everyone contributes, admin (position 0) receives,
+    // current_cycle advances to 1.
+    wallet::credit_wallet(&store, admin, 100_000, "r1", "fund");
+    wallet::credit_wallet(&store, m1,    100_000, "r2", "fund");
+    wallet::credit_wallet(&store, m2,    100_000, "r3", "fund");
+    ajo::contribute(&store, group.id, admin, TEST_TXN_PIN).unwrap();
+    ajo::contribute(&store, group.id, m1,    TEST_TXN_PIN).unwrap();
+    ajo::contribute(&store, group.id, m2,    TEST_TXN_PIN).unwrap();
+
+    // m1 is now at position 1, which is <= the new current_cycle (1) — their
+    // payout is imminent/in progress, so they can no longer be removed.
+    let res = ajo::remove_member(&store, group.id, admin, m1);
+    assert!(res.unwrap_err().error.contains("already received"));
+
+    // m2 (position 2) is still safely in the future and remains removable.
+    assert!(ajo::remove_member(&store, group.id, admin, m2).is_ok());
+}
+
 // ── Bills ─────────────────────────────────────────────────────────────────────
 
 #[test]

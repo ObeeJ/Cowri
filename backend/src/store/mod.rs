@@ -192,6 +192,7 @@ impl Store {
                     status: match status.as_str() {
                         "completed" => AjoStatus::Completed,
                         "paused"    => AjoStatus::Paused,
+                        "cancelled" => AjoStatus::Cancelled,
                         _           => AjoStatus::Active,
                     },
                     created_at,

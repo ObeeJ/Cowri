@@ -143,7 +143,7 @@ pub enum AjoFrequency { Daily, Weekly, Monthly }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub enum AjoStatus { Active, Completed, Paused }
+pub enum AjoStatus { Active, Completed, Paused, Cancelled }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AjoMember {

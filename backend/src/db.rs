@@ -444,6 +444,43 @@ pub async fn persist_ajo_join(pool: &sqlx::PgPool, group_id: uuid::Uuid, user_id
     Ok(())
 }
 
+pub async fn persist_ajo_close(pool: &sqlx::PgPool, group_id: uuid::Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE ajo_groups SET status = 'cancelled' WHERE id = $1")
+        .bind(group_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Mirrors `services::ajo::remove_member`'s in-memory renumbering: delete the
+/// member, then shift everyone after them down one position, then shrink
+/// member_count — one transaction, so a crash mid-way never leaves the
+/// rotation and the group's target size disagreeing.
+pub async fn persist_ajo_member_removal(
+    pool: &sqlx::PgPool,
+    group_id: uuid::Uuid,
+    removed_position: i32,
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("DELETE FROM ajo_members WHERE group_id = $1 AND payout_position = $2")
+        .bind(group_id).bind(removed_position)
+        .execute(&mut *tx).await?;
+
+    sqlx::query(
+        "UPDATE ajo_members SET payout_position = payout_position - 1
+         WHERE group_id = $1 AND payout_position > $2"
+    )
+    .bind(group_id).bind(removed_position)
+    .execute(&mut *tx).await?;
+
+    sqlx::query("UPDATE ajo_groups SET member_count = member_count - 1 WHERE id = $1")
+        .bind(group_id)
+        .execute(&mut *tx).await?;
+
+    tx.commit().await
+}
+
 pub async fn persist_ajo_contribution(pool: &sqlx::PgPool, group_id: uuid::Uuid, user_id: uuid::Uuid, cycle: u32, next_cycle: u32, completed: bool) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
