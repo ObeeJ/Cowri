@@ -101,9 +101,11 @@ pub async fn register(req: Request) -> Response {
     };
     match auth_svc::register(&state.store, body) {
         Ok(t) => {
-            let pin_hash = state.store.pins.lock().unwrap()
+            let password_hash = state.store.passwords.lock().unwrap()
                 .get(&t.user.id).cloned().unwrap_or_default();
-            let _ = db::persist_user(&state.db, &t.user, &pin_hash, &t.wallet).await;
+            let transaction_pin_hash = state.store.transaction_pins.lock().unwrap()
+                .get(&t.user.id).cloned().unwrap_or_default();
+            let _ = db::persist_user(&state.db, &t.user, &password_hash, &transaction_pin_hash, &t.wallet).await;
 
             // Send OTP email immediately (not via outbox — user is waiting)
             if let (Some(email), Some(otp)) = (t.user.email.as_deref(), t.otp.as_deref()) {
@@ -156,30 +158,37 @@ pub async fn resend_otp(req: Request) -> Response {
     }
 }
 
-pub async fn forgot_pin(req: Request) -> Response {
+pub async fn forgot_password(req: Request) -> Response {
     let state = match state(&req) { Ok(s) => s, Err(e) => return e };
-    let Json(body) = match Json::<ForgotPinRequest>::from_request(&req) {
+    let Json(body) = match Json::<ForgotPasswordRequest>::from_request(&req) {
         Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
     };
     // Always return same message — no email enumeration
-    if let Ok((otp, name)) = auth_svc::forgot_pin(&state.store, &body.email) {
-        let (subject, html, plain) = crate::email::forgot_pin_email(&name, &otp);
+    if let Ok((otp, name)) = auth_svc::forgot_password(&state.store, &body.email) {
+        let (subject, html, plain) = crate::email::forgot_password_email(&name, &otp);
         db::send_email_direct(&body.email, subject, &html, &plain).await;
     } // Err silently ignored — don't reveal if email exists
     ok(200, serde_json::json!({ "message": "If that email is registered, you'll receive a reset code." }))
 }
 
-pub async fn reset_pin(req: Request) -> Response {
+pub async fn reset_password(req: Request) -> Response {
     let state = match state(&req) { Ok(s) => s, Err(e) => return e };
-    let Json(body) = match Json::<ResetPinRequest>::from_request(&req) {
+    let Json(body) = match Json::<ResetPasswordRequest>::from_request(&req) {
         Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
     };
-    match auth_svc::reset_pin(&state.store, body) {
+    let email = body.email.clone();
+    match auth_svc::reset_password(&state.store, body) {
         Ok(_) => {
-            // Persist new PIN hash to DB
-            let email_clone = req.headers.get("x-email").cloned(); // not needed — handled in service
-            let _ = email_clone;
-            ok(200, serde_json::json!({ "message": "PIN reset successfully. You can now sign in." }))
+            // Persist new password hash to DB
+            let hash = state.store.users.lock().unwrap()
+                .values().find(|u| u.email.as_deref() == Some(&email)).map(|u| u.id)
+                .and_then(|uid| state.store.passwords.lock().unwrap().get(&uid).cloned());
+            if let Some(hash) = hash {
+                let _ = sqlx::query(
+                    "UPDATE passwords SET hash = $1 WHERE user_id = (SELECT id FROM users WHERE email = $2)"
+                ).bind(hash).bind(&email).execute(&state.db).await;
+            }
+            ok(200, serde_json::json!({ "message": "Password reset successfully. You can now sign in." }))
         }
         Err(e) => ok(400, e),
     }
@@ -244,6 +253,14 @@ pub async fn refresh_token(req: Request) -> Response {
 }
 
 // ── Wallet ────────────────────────────────────────────────────────────────────
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+pub async fn list_notifications(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    ok(200, crate::services::notifications::list_for_user(&state.store, user_id))
+}
 
 pub async fn get_wallet(req: Request) -> Response {
     let s       = match state(&req) { Ok(s) => s, Err(e) => return e };
@@ -404,7 +421,10 @@ pub async fn contribute_ajo(req: Request) -> Response {
     let group_id = match req.params.get("id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
         Some(id) => id, None => return err(400, "Invalid group ID"),
     };
-    match crate::services::ajo::contribute(&state.store, group_id, user_id) {
+    let Json(body) = match Json::<TransactionPinRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+    match crate::services::ajo::contribute(&state.store, group_id, user_id, &body.transaction_pin) {
         Ok(_)  => {
             let g = state.store.ajo_groups.lock().unwrap().get(&group_id).cloned();
             if let Some(g) = g {
@@ -419,6 +439,7 @@ pub async fn contribute_ajo(req: Request) -> Response {
         }
         Err(e) if e.error.contains("Insufficient") => ok(402, e),
         Err(e) if e.error.contains("Already contributed") => ok(409, e),
+        Err(e) if e.error.contains("transaction PIN") => ok(403, e),
         Err(e) => ok(400, e),
     }
 }
@@ -462,7 +483,10 @@ pub async fn pay_bill(req: Request) -> Response {
     let bill_id = match req.params.get("id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
         Some(id) => id, None => return err(400, "Invalid bill ID"),
     };
-    match crate::services::bills::pay_bill_share(&state.store, bill_id, user_id) {
+    let Json(body) = match Json::<TransactionPinRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+    match crate::services::bills::pay_bill_share(&state.store, bill_id, user_id, &body.transaction_pin) {
         Ok(_)  => {
             let all_paid = state.store.bills.lock().unwrap()
                 .get(&bill_id).map(|b| b.status == BillStatus::Settled).unwrap_or(false);
@@ -471,6 +495,7 @@ pub async fn pay_bill(req: Request) -> Response {
         }
         Err(e) if e.error.contains("Insufficient") => ok(402, e),
         Err(e) if e.error.contains("Already paid") => ok(409, e),
+        Err(e) if e.error.contains("transaction PIN") => ok(403, e),
         Err(e) => ok(400, e),
     }
 }

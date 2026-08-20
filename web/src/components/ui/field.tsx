@@ -41,7 +41,7 @@ export type FieldProps = {
   /** Presence switches the field into its error state. */
   error?: string | null
   required?: boolean
-  /** Rendered on the label row, right aligned. A "Forgot PIN?" link, say. */
+  /** Rendered on the label row, right aligned. A "Forgot password?" link, say. */
   action?: ReactNode
   children: ReactNode
   className?: string

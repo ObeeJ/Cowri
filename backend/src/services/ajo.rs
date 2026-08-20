@@ -71,7 +71,7 @@ pub fn join_group(store: &Store, group_id: Uuid, user_id: Uuid) -> Result<AjoMem
     Ok(member)
 }
 
-pub fn contribute(store: &Store, group_id: Uuid, contributor_id: Uuid) -> Result<(), ApiError> {
+pub fn contribute(store: &Store, group_id: Uuid, contributor_id: Uuid, transaction_pin: &str) -> Result<(), ApiError> {
     let group = store.ajo_groups.lock().unwrap()
         .get(&group_id).cloned()
         .ok_or(ApiError { error: "Group not found".into() })?;
@@ -102,7 +102,7 @@ pub fn contribute(store: &Store, group_id: Uuid, contributor_id: Uuid) -> Result
     let reference = format!("ajo-{}-{}-{}", group_id, contributor_id, group.current_cycle);
 
     debit_wallet(store, contributor_id, group.contribution_kobo, &reference,
-        &format!("Ajo contribution: {}", group.name))?;
+        &format!("Ajo contribution: {}", group.name), transaction_pin)?;
 
     // Platform fee: 0.5% of contribution, deducted from payout (integer math only)
     let fee_kobo    = group.contribution_kobo / 200; // 0.5% — integer division, no floats
@@ -123,6 +123,7 @@ pub fn contribute(store: &Store, group_id: Uuid, contributor_id: Uuid) -> Result
         .get(&contributor_id).map(|u| u.name.clone()).unwrap_or_else(|| "A member".into());
 
     crate::services::wallet::stage_outbox_event(store, "ajo.contribution", serde_json::json!({
+        "user_id":           receiver_id,
         "receiver_email":    receiver_email,
         "receiver_name":     receiver_name,
         "contributor_name":  contributor_name,

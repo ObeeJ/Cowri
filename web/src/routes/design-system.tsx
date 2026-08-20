@@ -1851,8 +1851,8 @@ function LayoutDocs() {
           <li className="px-4 py-3">
             <span className="numeric text-ink">AuthShell</span>
             <span className="ml-3 text-ink-muted">
-              Narrow left-aligned frame for the sign-in, registration, verification and PIN reset
-              steps.
+              Narrow left-aligned frame for the sign-in, registration, verification and password
+              reset steps.
             </span>
           </li>
           <li className="px-4 py-3">

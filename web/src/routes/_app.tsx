@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { AppShell } from '~/components/layout/app-shell'
 import { Skeleton, SkeletonGroup } from '~/components/ui/skeleton'
 import { useAuth } from '~/lib/auth'
+import { useNotificationToasts } from '~/lib/use-notification-toasts'
 
 /**
  * The signed-in layout.
@@ -24,6 +25,7 @@ function AuthenticatedLayout() {
   const { status } = useAuth()
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (state) => state.location.href })
+  useNotificationToasts(status === 'authenticated')
 
   useEffect(() => {
     if (status === 'anonymous') {

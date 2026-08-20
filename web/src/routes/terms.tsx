@@ -45,9 +45,9 @@ function TermsPage() {
 
         <Section heading="3. Your account" id="account">
           <p>
-            You register with your name, phone number, email address and a PIN. You are responsible
-            for keeping your PIN secret and for everything done through your account. Tell us
-            immediately if you believe someone else has access to it.
+            You register with your name, phone number, email address, a password, and a separate
+            transaction PIN. You are responsible for keeping both secret and for everything done
+            through your account. Tell us immediately if you believe someone else has access to it.
           </p>
           <p>
             Your phone number identifies you to other users when they add you to a split bill.
