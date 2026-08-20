@@ -33,6 +33,7 @@ import type {
   LedgerCheckResponse,
   LoginRequest,
   LoginResponse,
+  KycStatusResponse,
   MessageResponse,
   NotificationView,
   PaystackInitResponse,
@@ -45,6 +46,7 @@ import type {
   TransactionPinRequest,
   UserRole,
   Uuid,
+  VerifyBvnRequest,
   VerifyEmailRequest,
   Wallet,
 } from './types'
@@ -253,6 +255,13 @@ export const api = {
     /** Polled by useNotificationToasts to surface events as they arrive. */
     list: (signal?: AbortSignal) =>
       request<NotificationView[]>('/notifications', { signal }),
+  },
+
+  kyc: {
+    /** The BVN is sent once, over this call, straight to the backend — never
+     * to Prembly directly from the browser, and never stored by this app. */
+    verifyBvn: (body: VerifyBvnRequest) =>
+      request<KycStatusResponse>('/kyc/verify-bvn', { method: 'POST', body }),
   },
 
   wallet: {

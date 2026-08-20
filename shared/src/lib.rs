@@ -8,6 +8,13 @@ use uuid::Uuid;
 #[serde(rename_all = "snake_case")]
 pub enum UserRole { User, Admin }
 
+/// KYC state machine. `Unverified` (never attempted) and `Failed` (attempted,
+/// rejected) are distinct so the UI can tell "hasn't tried" from "tried and
+/// was turned down" — a resubmission path only makes sense for the latter.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum KycStatus { Unverified, Pending, Verified, Failed }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub id:             Uuid,
@@ -16,6 +23,7 @@ pub struct User {
     pub email:          Option<String>,
     pub role:           UserRole,
     pub email_verified: bool,
+    pub kyc_status:     KycStatus,
     pub created_at:     DateTime<Utc>,
 }
 
@@ -214,6 +222,27 @@ pub struct LoginRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TransactionPinRequest {
     pub transaction_pin: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VerifyBvnRequest {
+    pub bvn: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KycStatusResponse {
+    pub kyc_status: KycStatus,
+}
+
+/// Admin-only view — the reference and failure reason are support/audit
+/// detail, not something an ordinary user's own profile needs to carry.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KycDetail {
+    pub kyc_status:         KycStatus,
+    pub kyc_verified_at:    Option<DateTime<Utc>>,
+    pub kyc_provider:       Option<String>,
+    pub kyc_reference:      Option<String>,
+    pub kyc_failure_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

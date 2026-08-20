@@ -10,6 +10,10 @@ export type IsoDateTime = string
 
 export type UserRole = 'user' | 'admin'
 
+/** `unverified` (never attempted) and `failed` (attempted, rejected) are
+ * distinct — a resubmission path only makes sense for the latter. */
+export type KycStatus = 'unverified' | 'pending' | 'verified' | 'failed'
+
 export type User = {
   id: Uuid
   name: string
@@ -17,7 +21,18 @@ export type User = {
   email: string | null
   role: UserRole
   email_verified: boolean
+  kyc_status: KycStatus
   created_at: IsoDateTime
+}
+
+/** Admin-only detail — the reference and failure reason are support/audit
+ * detail, not something an ordinary user's own profile needs to carry. */
+export type KycDetail = {
+  kyc_status: KycStatus
+  kyc_verified_at: IsoDateTime | null
+  kyc_provider: string | null
+  kyc_reference: string | null
+  kyc_failure_reason: string | null
 }
 
 export type Wallet = {
@@ -128,6 +143,8 @@ export type ForgotPasswordRequest = { email: string }
 export type ResetPasswordRequest = { email: string; otp: string; new_password: string }
 export type LoginRequest = { phone: string; password: string }
 export type FundWalletRequest = { amount_kobo: number; email: string }
+export type VerifyBvnRequest = { bvn: string }
+export type KycStatusResponse = { kyc_status: KycStatus }
 /** Body for any money-out action — ajo contribution, bill payment — re-checks
  * the transaction PIN server-side even though the caller already has a
  * session, so a stolen cookie alone can't move money. */
@@ -203,6 +220,7 @@ export type AdminUserRow = {
   name: string
   phone: string
   role: UserRole
+  kyc_status: KycStatus
   balance_kobo: number
   created_at: IsoDateTime
 }
@@ -213,6 +231,7 @@ export type AdminUserDetail = {
   user: User
   wallet: Wallet | null
   transactions: Transaction[]
+  kyc_detail: KycDetail | null
 }
 
 export type AdminTransactionList = {
