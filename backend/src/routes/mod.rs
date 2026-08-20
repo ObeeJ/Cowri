@@ -2,13 +2,11 @@ use glideapi::{FromRequest, Json, Request, Response};
 use hmac::{Hmac, Mac};
 use sha2::Sha512;
 use shared::*;
-use chrono::Utc;
 
 use crate::AppState;
 use crate::services::auth as auth_svc;
 use crate::middleware::extract_user;
 use crate::db;
-use sqlx;
 
 pub mod admin;
 
@@ -68,7 +66,7 @@ fn clear_auth_cookies(mut resp: Response) -> Response {
 fn parse_pagination(req: &Request) -> (usize, usize) {
     // GlideAPI doesn't expose a query map — parse from path manually
     let raw_path = &req.path;
-    let qs = raw_path.splitn(2, '?').nth(1).unwrap_or("");
+    let qs = raw_path.split_once('?').map(|x| x.1).unwrap_or("");
 
     let mut page     = 0usize;
     let mut per_page = DEFAULT_PAGE_SIZE;
@@ -164,13 +162,10 @@ pub async fn forgot_pin(req: Request) -> Response {
         Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
     };
     // Always return same message — no email enumeration
-    match auth_svc::forgot_pin(&state.store, &body.email) {
-        Ok((otp, name)) => {
-            let (subject, html, plain) = crate::email::forgot_pin_email(&name, &otp);
-            db::send_email_direct(&body.email, subject, &html, &plain).await;
-        }
-        Err(_) => {} // silent — don't reveal if email exists
-    }
+    if let Ok((otp, name)) = auth_svc::forgot_pin(&state.store, &body.email) {
+        let (subject, html, plain) = crate::email::forgot_pin_email(&name, &otp);
+        db::send_email_direct(&body.email, subject, &html, &plain).await;
+    } // Err silently ignored — don't reveal if email exists
     ok(200, serde_json::json!({ "message": "If that email is registered, you'll receive a reset code." }))
 }
 

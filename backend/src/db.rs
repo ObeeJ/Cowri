@@ -1,7 +1,6 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 use chrono::Utc;
-use shared::*;
 
 pub async fn run_migrations(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("./migrations").run(pool).await?;
@@ -10,6 +9,17 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), Box<dyn std::error::Err
 
 // ── Wallet ────────────────────────────────────────────────────────────────────
 
+// Not yet called. `services::wallet::debit_wallet` — the path ajo
+// contributions and bill payments both go through — only mutates the
+// in-memory `Store`; nothing currently writes those debits (or the matching
+// credits) to `wallets`/`ledger_entries`/`transactions` in Postgres. Only
+// Paystack-webhook credits go through `credit` below. Until this is wired
+// into `persist_ajo_contribution` and `persist_bill_payment`, every ajo
+// contribution and bill payment is durable only in memory and is lost on
+// restart. Kept (not deleted) as the correct atomic building block for that
+// fix: single transaction, WHERE-guarded UPDATE against overdraft, ledger
+// and transaction rows, outbox event.
+#[allow(dead_code)]
 pub async fn debit(
     pool:        &PgPool,
     wallet_id:   Uuid,

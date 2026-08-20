@@ -156,7 +156,7 @@ pub async fn list_transactions(req: Request) -> Response {
     };
 
     // Parse pagination from path query string
-    let qs = req.path.splitn(2, '?').nth(1).unwrap_or("");
+    let qs = req.path.split_once('?').map(|x| x.1).unwrap_or("");
     let mut page = 0usize; let mut per_page = 50usize;
     for pair in qs.split('&') {
         let mut kv = pair.splitn(2, '=');
