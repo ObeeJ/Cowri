@@ -1,7 +1,7 @@
 import { cn } from '~/lib/cn'
-import type { AjoStatus, BillStatus, TransactionStatus } from '~/lib/api/types'
+import type { AjoStatus, BillStatus, KycStatus, TransactionStatus } from '~/lib/api/types'
 
-export type StatusKind = 'ajo' | 'bill' | 'transaction'
+export type StatusKind = 'ajo' | 'bill' | 'transaction' | 'kyc'
 
 type Descriptor = { label: string; tone: 'accent' | 'clay' | 'neutral' | 'muted' }
 
@@ -9,6 +9,7 @@ const ajo: Record<AjoStatus, Descriptor> = {
   active: { label: 'Active', tone: 'accent' },
   completed: { label: 'Completed', tone: 'neutral' },
   paused: { label: 'Paused', tone: 'clay' },
+  cancelled: { label: 'Closed', tone: 'muted' },
 }
 
 const bill: Record<BillStatus, Descriptor> = {
@@ -23,6 +24,15 @@ const transaction: Record<TransactionStatus, Descriptor> = {
   failed: { label: 'Failed', tone: 'clay' },
 }
 
+// `unverified` (never attempted) and `failed` (attempted, rejected) get
+// distinct labels — a resubmission path only makes sense for the latter.
+const kyc: Record<KycStatus, Descriptor> = {
+  unverified: { label: 'Not verified', tone: 'muted' },
+  pending: { label: 'Checking…', tone: 'muted' },
+  verified: { label: 'Verified', tone: 'accent' },
+  failed: { label: 'Verification failed', tone: 'clay' },
+}
+
 const toneClasses = {
   accent: 'border-accent-rule bg-accent-tint text-accent',
   clay: 'border-clay-rule bg-clay-tint text-clay',
@@ -34,6 +44,7 @@ export type StatusPillProps =
   | { kind: 'ajo'; status: AjoStatus; className?: string }
   | { kind: 'bill'; status: BillStatus; className?: string }
   | { kind: 'transaction'; status: TransactionStatus; className?: string }
+  | { kind: 'kyc'; status: KycStatus; className?: string }
 
 /**
  * Turns an API status enum into a labelled pill.
@@ -49,7 +60,9 @@ export function StatusPill(props: StatusPillProps) {
       ? ajo[props.status]
       : props.kind === 'bill'
         ? bill[props.status]
-        : transaction[props.status]
+        : props.kind === 'transaction'
+          ? transaction[props.status]
+          : kyc[props.status]
 
   return (
     <span

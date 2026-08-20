@@ -1,0 +1,57 @@
+# Production compose for the Hetzner VPS — see infra/README.md and
+# .github/workflows/deploy.yml. Deliberately different from
+# docker-compose.yml (local dev): no local `db` service, since Postgres is
+# Neon (DATABASE_URL points at it via the env file); Caddy replaces exposing
+# the API's port directly, terminating TLS with its own Let's Encrypt
+# certificate so Cloudflare can run in Full (strict) mode end to end.
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    # Not published to the host — only `api` reaches it, over the compose
+    # network.
+
+  api:
+    image: ${COWRI_IMAGE:-ghcr.io/OWNER/cowri-api:latest}
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    # Not published to the host either — Caddy is the only thing allowed to
+    # reach it, which is also what the Hetzner firewall (infra/firewall.tf)
+    # assumes: only 80/443 are open, and only to Cloudflare's IP ranges.
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    env_file:
+      - .env # reads API_DOMAIN
+
+volumes:
+  redis-data:
+  caddy-data:
+  caddy-config:

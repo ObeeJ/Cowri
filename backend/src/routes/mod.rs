@@ -262,6 +262,171 @@ pub async fn list_notifications(req: Request) -> Response {
     ok(200, crate::services::notifications::list_for_user(&state.store, user_id))
 }
 
+// ── Media ─────────────────────────────────────────────────────────────────────
+
+pub async fn presign_media_upload(req: Request) -> Response {
+    let user_id = match auth(&req) { Ok(id) => id, Err(e) => return e };
+    let Json(body) = match Json::<PresignUploadRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+
+    match crate::services::media::presign_upload(user_id, &body.content_type, body.size_bytes, &body.purpose) {
+        Ok(p) => ok(200, PresignUploadResponse {
+            upload_url: p.upload_url,
+            object_key: p.object_key,
+            public_url: p.public_url,
+        }),
+        Err(e) => ok(502, e),
+    }
+}
+
+/// The client calls this once its direct PUT to R2 has actually succeeded —
+/// nothing is written to the `media` table (or, for an avatar, to the
+/// user's `avatar_url`) before then, so a presigned URL that's issued but
+/// never used leaves no trace.
+pub async fn confirm_media_upload(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let Json(body) = match Json::<ConfirmUploadRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+
+    // The object key must belong to this user's own namespace — confirming
+    // an upload isn't a way to claim someone else's object.
+    if !body.object_key.starts_with(&format!("{}/{}/", body.purpose, user_id)) {
+        return err(403, "Object key does not belong to this account");
+    }
+
+    let public_url = format!(
+        "{}/{}",
+        std::env::var("R2_PUBLIC_URL").unwrap_or_default().trim_end_matches('/'),
+        body.object_key
+    );
+
+    let media = MediaItem {
+        id: uuid::Uuid::new_v4(),
+        object_key: body.object_key.clone(),
+        purpose: body.purpose.clone(),
+        content_type: body.content_type.clone(),
+        size_bytes: body.size_bytes,
+        public_url,
+        created_at: chrono::Utc::now(),
+    };
+
+    if db::persist_media(&state.db, &media, user_id).await.is_err() {
+        return err(502, "Could not record the upload");
+    }
+
+    if media.purpose == "avatar" {
+        let _ = db::set_avatar(&state.db, user_id, Some(&media.public_url)).await;
+        if let Some(u) = state.store.users.lock().unwrap().get_mut(&user_id) {
+            u.avatar_url = Some(media.public_url.clone());
+        }
+    }
+
+    ok(201, media)
+}
+
+pub async fn delete_media(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let media_id = match req.params.get("id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+        Some(id) => id, None => return err(400, "Invalid media ID"),
+    };
+
+    let object_key = match db::media_object_key_owned_by(&state.db, media_id, user_id).await {
+        Some(key) => key,
+        None => return err(404, "Media not found"),
+    };
+
+    if let Err(e) = crate::services::media::delete_object(&object_key).await {
+        return ok(502, e);
+    }
+    let _ = db::delete_media_row(&state.db, media_id).await;
+
+    // Clear the avatar rather than leave it pointing at a deleted object.
+    let was_avatar = state.store.users.lock().unwrap()
+        .get(&user_id)
+        .and_then(|u| u.avatar_url.as_ref())
+        .is_some_and(|url| url.ends_with(&object_key));
+
+    if was_avatar {
+        let _ = db::set_avatar(&state.db, user_id, None).await;
+        if let Some(u) = state.store.users.lock().unwrap().get_mut(&user_id) {
+            u.avatar_url = None;
+        }
+    }
+
+    ok(200, serde_json::json!({ "status": "deleted" }))
+}
+
+// ── KYC ───────────────────────────────────────────────────────────────────────
+
+pub async fn verify_bvn(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let Json(body) = match Json::<VerifyBvnRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+
+    let current_status = match state.store.users.lock().unwrap().get(&user_id) {
+        Some(u) => u.kyc_status.clone(),
+        None => return err(404, "User not found"),
+    };
+    if let Err(e) = crate::services::kyc::require_not_already_verified(&current_status) {
+        return err(409, &e.error);
+    }
+
+    let outcome = match crate::services::kyc::verify_bvn(&body.bvn).await {
+        Ok(o)  => o,
+        Err(e) => return ok(502, e),
+    };
+
+    // A BVN that cleared Prembly's check but is already claimed by a
+    // different Cowri account still fails here — one verified identity,
+    // one account.
+    let (verified, failure_reason) = if outcome.verified
+        && crate::services::kyc::bvn_already_claimed(&state.db, &outcome.bvn_hash, user_id).await
+    {
+        (false, Some("This BVN is already linked to another Cowri account".to_string()))
+    } else {
+        (outcome.verified, outcome.failure_reason)
+    };
+
+    // The in-memory status only ever moves once the durable write actually
+    // lands. If two concurrent requests raced past `bvn_already_claimed`
+    // above (a plain SELECT — not itself a lock) with the same BVN, the
+    // second's UPDATE here is the thing that actually loses: the unique
+    // index on bvn_hash rejects it. Treating that failure as "verified"
+    // anyway would let both accounts believe they'd claimed the same BVN
+    // until the process restarted and reloaded from Postgres.
+    if let Err(e) = db::persist_kyc_result(
+        &state.db, user_id, verified,
+        Some(&outcome.bvn_hash), outcome.reference.as_deref(), failure_reason.as_deref(),
+    ).await {
+        let reason = if verified && e.as_database_error().is_some_and(|e| e.is_unique_violation()) {
+            "This BVN is already linked to another Cowri account"
+        } else {
+            "Could not save the verification result. Try again."
+        };
+        return ok(422, serde_json::json!({ "kyc_status": KycStatus::Failed, "error": reason }));
+    }
+
+    let new_status = if verified { KycStatus::Verified } else { KycStatus::Failed };
+    if let Some(u) = state.store.users.lock().unwrap().get_mut(&user_id) {
+        u.kyc_status = new_status.clone();
+    }
+
+    if verified {
+        ok(200, KycStatusResponse { kyc_status: new_status })
+    } else {
+        ok(422, serde_json::json!({
+            "kyc_status": new_status,
+            "error": failure_reason.unwrap_or_else(|| "BVN could not be verified".into()),
+        }))
+    }
+}
+
 pub async fn get_wallet(req: Request) -> Response {
     let s       = match state(&req) { Ok(s) => s, Err(e) => return e };
     let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
@@ -547,6 +712,45 @@ pub async fn ajo_invite(req: Request) -> Response {
         "invite_url": format!("{app_url}/ajo/join/{group_id}"),
         "group_id": group_id,
     }))
+}
+
+// ── Circle supervision ──────────────────────────────────────────────────────────
+
+pub async fn close_ajo(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let group_id = match req.params.get("id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+        Some(id) => id, None => return err(400, "Invalid group ID"),
+    };
+
+    match crate::services::ajo::close_group(&state.store, group_id, user_id) {
+        Ok(_) => {
+            let _ = db::persist_ajo_close(&state.db, group_id).await;
+            ok(200, serde_json::json!({ "status": "closed" }))
+        }
+        Err(e) if e.error.contains("Only the group admin") => ok(403, e),
+        Err(e) => ok(400, e),
+    }
+}
+
+pub async fn remove_ajo_member(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let group_id = match req.params.get("id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+        Some(id) => id, None => return err(400, "Invalid group ID"),
+    };
+    let target_id = match req.params.get("member_id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+        Some(id) => id, None => return err(400, "Invalid member ID"),
+    };
+
+    match crate::services::ajo::remove_member(&state.store, group_id, user_id, target_id) {
+        Ok(removed_position) => {
+            let _ = db::persist_ajo_member_removal(&state.db, group_id, removed_position as i32).await;
+            ok(200, serde_json::json!({ "status": "removed" }))
+        }
+        Err(e) if e.error.contains("Only the group admin") => ok(403, e),
+        Err(e) => ok(400, e),
+    }
 }
 
 // ── Reconciliation ────────────────────────────────────────────────────────────

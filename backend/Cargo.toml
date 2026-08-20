@@ -28,3 +28,4 @@ sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-native-tls", "u
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 lettre = { version = "0.11", features = ["tokio1-native-tls", "smtp-transport", "builder"], default-features = false }
+rusty-s3 = "0.10.2"

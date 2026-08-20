@@ -154,6 +154,94 @@ pub fn contribute(store: &Store, group_id: Uuid, contributor_id: Uuid, transacti
     Ok(())
 }
 
+/// Closing a circle stops all future contributions and joins (both already
+/// gate on `status == Active`). It does not — and cannot — unwind anything
+/// already paid: each contribution credits its cycle's receiver immediately
+/// when it's made, so Cowri never held a pooled balance to refund. Whoever
+/// received a payout in a completed cycle keeps it; nobody still owes a
+/// contribution once the circle is closed.
+pub fn close_group(store: &Store, group_id: Uuid, requester_id: Uuid) -> Result<(), ApiError> {
+    let mut groups = store.ajo_groups.lock().unwrap();
+    let group = groups.get_mut(&group_id)
+        .ok_or(ApiError { error: "Group not found".into() })?;
+
+    if group.admin_id != requester_id {
+        return Err(ApiError { error: "Only the group admin can close this circle".into() });
+    }
+    if group.status != AjoStatus::Active {
+        return Err(ApiError { error: "This circle is not active".into() });
+    }
+
+    group.status = AjoStatus::Cancelled;
+    Ok(())
+}
+
+/// Removes a member who has not yet reached their turn in the payout
+/// rotation. Two members are deliberately unremovable: anyone at or before
+/// the current cycle's position (they have either already received a payout,
+/// position < current_cycle, or contributions toward their payout may
+/// already be in flight this cycle, position == current_cycle — removing
+/// either would strand money that already moved), and the group admin
+/// themselves (closing the circle is the correct way for an admin to walk
+/// away from it). Remaining members' payout_position is shifted down to
+/// close the gap this leaves, and member_count drops by one to match, so the
+/// rotation and the "is this group full" check both stay consistent.
+pub fn remove_member(store: &Store, group_id: Uuid, requester_id: Uuid, target_id: Uuid) -> Result<u32, ApiError> {
+    let group = store.ajo_groups.lock().unwrap()
+        .get(&group_id).cloned()
+        .ok_or(ApiError { error: "Group not found".into() })?;
+
+    if group.admin_id != requester_id {
+        return Err(ApiError { error: "Only the group admin can remove a member".into() });
+    }
+    if group.status != AjoStatus::Active {
+        return Err(ApiError { error: "This circle is not active".into() });
+    }
+    if target_id == requester_id {
+        return Err(ApiError { error: "The admin cannot remove themselves — close the circle instead".into() });
+    }
+
+    let mut members = store.ajo_members.lock().unwrap();
+    let target = members.get(&(group_id, target_id)).cloned()
+        .ok_or(ApiError { error: "Not a member of this group".into() })?;
+
+    if target.payout_position <= group.current_cycle {
+        return Err(ApiError {
+            error: "This member has already received their payout, or their cycle is in progress, and can no longer be removed".into(),
+        });
+    }
+    // A future payout position alone isn't enough: everyone is expected to
+    // contribute every cycle, not just whoever's turn it is. If this member
+    // already contributed this cycle and is then removed, their contribution
+    // stays counted in contributions_this_cycle while member_count drops —
+    // the cycle could complete without everyone remaining having actually
+    // paid in. Contributions aren't reversible either (they credit the
+    // receiver immediately), so the only safe move is to refuse the removal.
+    if store.ajo_contributions.lock().unwrap()
+        .contains(&(group_id, target_id, group.current_cycle))
+    {
+        return Err(ApiError {
+            error: "This member has already contributed this cycle and can no longer be removed".into(),
+        });
+    }
+
+    members.remove(&(group_id, target_id));
+
+    // Close the gap: everyone scheduled after the removed member moves up one.
+    for member in members.values_mut() {
+        if member.group_id == group_id && member.payout_position > target.payout_position {
+            member.payout_position -= 1;
+        }
+    }
+    drop(members);
+
+    if let Some(g) = store.ajo_groups.lock().unwrap().get_mut(&group_id) {
+        g.member_count -= 1;
+    }
+
+    Ok(target.payout_position)
+}
+
 pub fn list_groups(store: &Store, user_id: Uuid) -> Vec<AjoGroup> {
     let members = store.ajo_members.lock().unwrap();
     let group_ids: Vec<Uuid> = members.keys()

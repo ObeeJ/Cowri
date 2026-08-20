@@ -1,0 +1,22 @@
+# Reverse proxy + automatic TLS for the Rust API. Caddy requests and renews
+# its own Let's Encrypt certificate for {$API_DOMAIN} — that's the real
+# certificate Cloudflare's "Full (strict)" mode validates against
+# (infra/cloudflare.tf). API_DOMAIN is set in the .env the deploy workflow
+# writes on the server, e.g. api.cowri.app.
+
+{$API_DOMAIN} {
+	reverse_proxy api:3000
+
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

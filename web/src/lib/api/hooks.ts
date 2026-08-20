@@ -13,7 +13,7 @@ import {
   useQueryClient,
   type UseQueryOptions,
 } from '@tanstack/react-query'
-import { ApiError, api, newIdempotencyKey } from './client'
+import { ApiError, api, newIdempotencyKey, uploadToPresignedUrl } from './client'
 import { queryKeys } from './keys'
 import type {
   CreateAjoRequest,
@@ -144,6 +144,32 @@ export function useContributeAjo() {
   })
 }
 
+/** Group admin only — stops all future contributions and joins. */
+export function useCloseAjo() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: Uuid) => api.ajo.close(id),
+    onSuccess: (_data, id) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ajoDetail(id) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ajoList })
+    },
+  })
+}
+
+/** Group admin only — the API rejects removing anyone whose payout is
+ * already due or in progress. */
+export function useRemoveAjoMember() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ groupId, memberId }: { groupId: Uuid; memberId: Uuid }) =>
+      api.ajo.removeMember(groupId, memberId),
+    onSuccess: (_data, { groupId }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ajoDetail(groupId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ajoList })
+    },
+  })
+}
+
 // ── Bills ───────────────────────────────────────────────────────────────────
 
 export function useBills(page = 0, perPage = 20, enabled = true) {
@@ -208,6 +234,42 @@ export function useForgotPassword() {
 
 export function useResetPassword() {
   return useMutation({ mutationFn: api.auth.resetPassword })
+}
+
+// ── Media ───────────────────────────────────────────────────────────────────
+
+/** Presigns, uploads directly to R2, then confirms — one call from the
+ * caller's point of view. */
+export function useUploadMedia() {
+  return useMutation({
+    mutationFn: async ({ file, purpose }: { file: File; purpose: string }) => {
+      const presigned = await api.media.presign({
+        content_type: file.type,
+        size_bytes: file.size,
+        purpose,
+      })
+      await uploadToPresignedUrl(presigned.upload_url, file)
+      return api.media.confirm({
+        object_key: presigned.object_key,
+        content_type: file.type,
+        size_bytes: file.size,
+        purpose,
+      })
+    },
+  })
+}
+
+export function useDeleteMedia() {
+  return useMutation({ mutationFn: (id: Uuid) => api.media.delete(id) })
+}
+
+// ── KYC ─────────────────────────────────────────────────────────────────────
+
+/** The caller is responsible for syncing `kyc_status` onto the cached user
+ * profile on success (via `useAuth().setUser`) — this hook only knows about
+ * the API, not the session. */
+export function useVerifyBvn() {
+  return useMutation({ mutationFn: api.kyc.verifyBvn })
 }
 
 // ── Admin ───────────────────────────────────────────────────────────────────

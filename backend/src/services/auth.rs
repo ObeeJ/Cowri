@@ -278,6 +278,8 @@ pub fn register(store: &Store, req: RegisterRequest) -> Result<AuthTokens, ApiEr
         email: Some(email),
         role: UserRole::User,
         email_verified: false,
+        kyc_status: KycStatus::Unverified,
+        avatar_url: None,
         created_at: now,
     };
 
