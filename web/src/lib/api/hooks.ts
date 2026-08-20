@@ -144,6 +144,32 @@ export function useContributeAjo() {
   })
 }
 
+/** Group admin only — stops all future contributions and joins. */
+export function useCloseAjo() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: Uuid) => api.ajo.close(id),
+    onSuccess: (_data, id) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ajoDetail(id) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ajoList })
+    },
+  })
+}
+
+/** Group admin only — the API rejects removing anyone whose payout is
+ * already due or in progress. */
+export function useRemoveAjoMember() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ groupId, memberId }: { groupId: Uuid; memberId: Uuid }) =>
+      api.ajo.removeMember(groupId, memberId),
+    onSuccess: (_data, { groupId }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ajoDetail(groupId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ajoList })
+    },
+  })
+}
+
 // ── Bills ───────────────────────────────────────────────────────────────────
 
 export function useBills(page = 0, perPage = 20, enabled = true) {

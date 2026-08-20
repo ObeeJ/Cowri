@@ -602,6 +602,45 @@ pub async fn ajo_invite(req: Request) -> Response {
     }))
 }
 
+// ── Circle supervision ──────────────────────────────────────────────────────────
+
+pub async fn close_ajo(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let group_id = match req.params.get("id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+        Some(id) => id, None => return err(400, "Invalid group ID"),
+    };
+
+    match crate::services::ajo::close_group(&state.store, group_id, user_id) {
+        Ok(_) => {
+            let _ = db::persist_ajo_close(&state.db, group_id).await;
+            ok(200, serde_json::json!({ "status": "closed" }))
+        }
+        Err(e) if e.error.contains("Only the group admin") => ok(403, e),
+        Err(e) => ok(400, e),
+    }
+}
+
+pub async fn remove_ajo_member(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let group_id = match req.params.get("id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+        Some(id) => id, None => return err(400, "Invalid group ID"),
+    };
+    let target_id = match req.params.get("member_id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+        Some(id) => id, None => return err(400, "Invalid member ID"),
+    };
+
+    match crate::services::ajo::remove_member(&state.store, group_id, user_id, target_id) {
+        Ok(removed_position) => {
+            let _ = db::persist_ajo_member_removal(&state.db, group_id, removed_position as i32).await;
+            ok(200, serde_json::json!({ "status": "removed" }))
+        }
+        Err(e) if e.error.contains("Only the group admin") => ok(403, e),
+        Err(e) => ok(400, e),
+    }
+}
+
 // ── Reconciliation ────────────────────────────────────────────────────────────
 
 pub async fn ledger_check(req: Request) -> Response {

@@ -304,6 +304,15 @@ export const api = {
     /** Re-checks the transaction PIN server-side before moving any money. */
     contribute: (id: Uuid, body: TransactionPinRequest) =>
       request<StatusResponse>(`/ajo/${id}/contribute`, { method: 'POST', body }),
+
+    /** Group admin only. Stops all future contributions and joins — does not
+     * undo anything already paid out in past cycles. */
+    close: (id: Uuid) => request<StatusResponse>(`/ajo/${id}/close`, { method: 'POST' }),
+
+    /** Group admin only. The API rejects removing anyone whose payout is
+     * already due or in progress. */
+    removeMember: (groupId: Uuid, memberId: Uuid) =>
+      request<StatusResponse>(`/ajo/${groupId}/members/${memberId}/remove`, { method: 'POST' }),
   },
 
   bills: {
