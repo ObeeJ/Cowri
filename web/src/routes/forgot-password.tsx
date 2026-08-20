@@ -3,16 +3,16 @@ import { useState, type FormEvent } from 'react'
 import { AuthShell } from '~/components/layout/auth-shell'
 import { Button } from '~/components/ui/button'
 import { Field, Input } from '~/components/ui/field'
-import { useForgotPin } from '~/lib/api/hooks'
+import { useForgotPassword } from '~/lib/api/hooks'
 import { errorMessage } from '~/lib/api/client'
 
-export const Route = createFileRoute('/forgot-pin')({
-  component: ForgotPinPage,
+export const Route = createFileRoute('/forgot-password')({
+  component: ForgotPasswordPage,
 })
 
-function ForgotPinPage() {
+function ForgotPasswordPage() {
   const navigate = useNavigate()
-  const forgotPin = useForgotPin()
+  const forgotPassword = useForgotPassword()
   const [email, setEmail] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -24,10 +24,10 @@ function ForgotPinPage() {
       return
     }
     try {
-      await forgotPin.mutateAsync({ email: email.trim() })
+      await forgotPassword.mutateAsync({ email: email.trim() })
       // The API answers the same way whether or not the address is registered,
       // so this screen does too. Move straight on to the reset step.
-      await navigate({ to: '/reset-pin', search: { email: email.trim() } })
+      await navigate({ to: '/reset-password', search: { email: email.trim() } })
     } catch (caught) {
       setError(errorMessage(caught))
     }
@@ -35,7 +35,7 @@ function ForgotPinPage() {
 
   return (
     <AuthShell
-      title="Reset your PIN"
+      title="Reset your password"
       description="Enter the email address on your account and we will send a 6 digit reset code."
       footer={
         <>
@@ -68,7 +68,7 @@ function ForgotPinPage() {
           variant="primary"
           size="lg"
           fullWidth
-          loading={forgotPin.isPending}
+          loading={forgotPassword.isPending}
           loadingText="Sending the code"
         >
           Send reset code

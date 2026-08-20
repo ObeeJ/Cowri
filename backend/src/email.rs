@@ -171,8 +171,8 @@ pub fn ajo_payout_email(name: &str, amount_kobo: i64, group_name: &str) -> (&'st
  (subject, html, plain)
 }
 
-pub fn forgot_pin_email(name: &str, otp: &str) -> (&'static str, String, String) {
- let subject = "Reset your Cowri PIN";
+pub fn forgot_password_email(name: &str, otp: &str) -> (&'static str, String, String) {
+ let subject = "Reset your Cowri password";
 
  let html = format!(r#"<!DOCTYPE html>
 <html lang="en">
@@ -188,16 +188,16 @@ pub fn forgot_pin_email(name: &str, otp: &str) -> (&'static str, String, String)
  </tr>
  <tr>
  <td style="padding:40px 40px 32px;">
- <p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#111827;">Reset your PIN </p>
+ <p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#111827;">Reset your password </p>
  <p style="margin:0 0 28px;font-size:15px;color:#6b7280;line-height:1.6;">
- Hi {name}, use the code below to reset your Cowri PIN. It expires in <strong>15 minutes</strong>.
+ Hi {name}, use the code below to reset your Cowri password. It expires in <strong>15 minutes</strong>.
  </p>
  <div style="background:#fff7ed;border:2px solid #fed7aa;border-radius:12px;padding:24px;text-align:center;margin-bottom:28px;">
  <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#ea580c;letter-spacing:1px;text-transform:uppercase;">Reset Code</p>
  <p style="margin:0;font-size:40px;font-weight:800;color:#111827;letter-spacing:10px;">{otp}</p>
  </div>
  <p style="margin:0 0 8px;font-size:13px;color:#9ca3af;line-height:1.6;">
- If you didn't request a PIN reset, your account is safe — ignore this email.
+ If you didn't request a password reset, your account is safe — ignore this email.
  </p>
  <p style="margin:0;font-size:13px;color:#ef4444;font-weight:500;">
  Never share this code with anyone, including Cowri support.
@@ -217,7 +217,7 @@ pub fn forgot_pin_email(name: &str, otp: &str) -> (&'static str, String, String)
 </html>"#, name=name, otp=otp);
 
  let plain = format!(
- "Hi {name},\n\nYour Cowri PIN reset code is: {otp}\n\nExpires in 15 minutes.\n\nNever share this code with anyone.\n\nCowri"
+ "Hi {name},\n\nYour Cowri password reset code is: {otp}\n\nExpires in 15 minutes.\n\nNever share this code with anyone.\n\nCowri"
  );
  (subject, html, plain)
 }
