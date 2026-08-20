@@ -2,7 +2,7 @@
 
 A fintech web application for Nigerians — digital rotating savings (Ajo/Esusu), bill splitting, and wallet management with Paystack payments.
 
-Rust REST API on the backend, with two clients: a React web app in `web/` and the original Leptos WebAssembly PWA in `frontend/`.
+Rust REST API on the backend, serving a React web client (`web/`). In production the API serves the client's built assets itself, so the whole app is one process on one origin.
 
 ---
 
@@ -22,7 +22,6 @@ Rust REST API on the backend, with two clients: a React web app in `web/` and th
 |-------|-----------|
 | Backend | Rust, GlideAPI, Tokio, Postgres |
 | Web client | React 19, TanStack Router, TanStack Query, Tailwind v4 |
-| Legacy client | Rust, Leptos, WebAssembly |
 | Payments | Paystack |
 
 ---
@@ -31,22 +30,19 @@ Rust REST API on the backend, with two clients: a React web app in `web/` and th
 
 ```
 cowri/
+├── glideapi/     # The HTTP framework the API is built on
 ├── shared/       # Shared types and DTOs (User, Wallet, AjoGroup, Bill)
-├── backend/      # REST API
+├── backend/      # REST API — also serves web/dist as a single-page app
 │   └── src/
 │       ├── services/   # auth, wallet, ajo, bills
 │       ├── routes/     # HTTP handlers
 │       ├── store/      # In-memory store hydrated from Postgres
 │       └── middleware.rs
-├── web/          # React web client (see web/README.md)
-│   └── src/
-│       ├── routes/     # Marketing, auth, app and admin routes
-│       ├── components/ # ui primitives, domain surfaces, layouts
-│       └── lib/        # api client, money, auth, theme
-└── frontend/     # Leptos WASM PWA
+└── web/          # React web client (see web/README.md)
     └── src/
-        ├── pages/      # auth, dashboard
-        └── components/ # Button, Card, Input, Badge
+        ├── routes/     # Marketing, auth, app and admin routes
+        ├── components/ # ui primitives, domain surfaces, layouts
+        └── lib/        # api client, money, auth, theme
 ```
 
 ---
@@ -55,38 +51,48 @@ cowri/
 
 ### Prerequisites
 
-- Rust (stable)
-- `wasm32-unknown-unknown` target
-- [Trunk](https://trunkrs.dev) for frontend builds
-
-```bash
-rustup target add wasm32-unknown-unknown
-cargo install trunk
-```
+- Rust (stable) and Postgres
+- Node 22+, for the web client
 
 ### Environment
 
 Create `backend/.env`:
 
 ```env
+DATABASE_URL=postgres://cowri:cowri@localhost:5432/cowri
+JWT_SECRET=some-random-string-at-least-32-bytes-long
 PAYSTACK_SECRET_KEY=sk_test_your_key_here
 ```
 
-### Run
+### Run, day to day
+
+Two processes, with the web client talking to the API through a dev proxy so
+neither CORS nor an API URL needs configuring:
 
 ```bash
 # Backend (port 3000)
 cargo run -p backend
 
-# React web client (port 5173)
+# Web client (port 5173) — proxies /v1 to the backend above
 cd web && npm install && npm run dev
-
-# Leptos client (port 8080)
-cd frontend && trunk serve
 ```
 
-Set `CORS_ORIGIN` on the backend to whichever client origin you are running, or
-the browser will drop the session cookies without a visible error.
+### Run as it deploys
+
+In production the backend serves the web client's own build, so the whole app
+is one process on one origin:
+
+```bash
+cd web && npm install && npm run build   # writes web/dist
+cd .. && cargo run -p backend --release  # picks up web/dist automatically
+```
+
+`STATIC_DIR` overrides where the backend looks for a build (default
+`web/dist`, resolved relative to the working directory the API is started
+from). If no build is found there, the API still runs, just without serving a
+client — useful when working on the backend alone.
+
+The `Dockerfile` builds both in this order and produces a single image.
 
 The React client is documented in [`web/README.md`](web/README.md), and its
 component library, with props and live examples, is served at `/design-system`.

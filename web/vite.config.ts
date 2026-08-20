@@ -16,13 +16,13 @@ export default defineConfig({
       manifest: {
         name: 'Cowri',
         short_name: 'Cowri',
-        description: 'Save together. Split easy. Pay fast.',
+        description: 'Joint savings circles and split payments, together.',
         start_url: '/',
         scope: '/',
         display: 'standalone',
         orientation: 'portrait',
         background_color: '#f4f1ea',
-        theme_color: '#0f5c48',
+        theme_color: '#1e5631',
         icons: [
           { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
           { src: '/icon-maskable.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
@@ -55,5 +55,18 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // In production this app is served by the backend itself, so it calls
+    // /v1 same-origin (see src/lib/api/client.ts). This proxy reproduces
+    // that during `npm run dev` against a locally running API, so the app
+    // works with zero config and no CORS setup either side.
+    proxy: {
+      '/v1': { target: 'http://localhost:3000', changeOrigin: true },
+    },
+  },
+  preview: {
+    port: 4173,
+    proxy: {
+      '/v1': { target: 'http://localhost:3000', changeOrigin: true },
+    },
   },
 })
