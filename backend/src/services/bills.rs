@@ -129,7 +129,7 @@ pub fn list_bills(store: &Store, user_id: Uuid, page: usize, per_page: usize) ->
     let mut result: Vec<Bill> = bill_ids.iter()
         .filter_map(|id| bills.get(id).cloned())
         .collect();
-    result.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    result.sort_by_key(|b| std::cmp::Reverse(b.created_at));
     result.into_iter().skip(page * per_page).take(per_page).collect()
 }
 
