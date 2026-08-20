@@ -120,7 +120,7 @@ CREATE TABLE ajo_groups (
     frequency           TEXT        NOT NULL CHECK (frequency IN ('daily','weekly','monthly')),
     member_count        INT         NOT NULL CHECK (member_count BETWEEN 2 AND 50),
     current_cycle       INT         NOT NULL DEFAULT 0,
-    status              TEXT        NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed','paused')),
+    status              TEXT        NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed','paused','cancelled')),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

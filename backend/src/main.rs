@@ -89,6 +89,8 @@ async fn main() {
         .route("POST", "/v1/ajo",                  routes::create_ajo)
         .route("GET",  "/v1/ajo/:id",              routes::get_ajo)
         .route("GET",  "/v1/ajo/:id/invite",       routes::ajo_invite)
+        .route("POST", "/v1/ajo/:id/close",        routes::close_ajo)
+        .route("POST", "/v1/ajo/:id/members/:member_id/remove", routes::remove_ajo_member)
         .route("POST", "/v1/ajo/:id/join",         routes::join_ajo)
         .route("POST", "/v1/ajo/:id/contribute",   routes::contribute_ajo)
         .route("GET",  "/v1/bills",                routes::list_bills)

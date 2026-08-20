@@ -13,10 +13,18 @@ import { Skeleton, SkeletonGroup } from '~/components/ui/skeleton'
 import { ErrorState } from '~/components/ui/states'
 import { useToast } from '~/components/ui/toast'
 import { CopyIcon, NoteIcon, TickIcon } from '~/components/icons'
-import { useAjoGroup, useAjoInvite, useContributeAjo, useWallet } from '~/lib/api/hooks'
+import {
+  useAjoGroup,
+  useAjoInvite,
+  useCloseAjo,
+  useContributeAjo,
+  useRemoveAjoMember,
+  useWallet,
+} from '~/lib/api/hooks'
 import { useAuth } from '~/lib/auth'
 import { ApiError, errorMessage } from '~/lib/api/client'
 import { formatKobo } from '~/lib/money'
+import type { AjoDetail, AjoMemberSummary, Uuid } from '~/lib/api/types'
 
 export const Route = createFileRoute('/_app/ajo/$groupId')({
   component: AjoDetailPage,
@@ -117,11 +125,14 @@ function AjoDetailPage() {
       </section>
 
       {isGroupAdmin ? (
-        <InviteSection
-          inviteUrl={invite.data?.invite_url}
-          loading={invite.isPending}
-          error={invite.isError ? invite.error : null}
-        />
+        <>
+          <InviteSection
+            inviteUrl={invite.data?.invite_url}
+            loading={invite.isPending}
+            error={invite.isError ? invite.error : null}
+          />
+          <ManageCircleSection groupId={groupId} detail={detail.data} />
+        </>
       ) : null}
 
       <ContributeDialog
@@ -329,6 +340,176 @@ function ContributeDialog({
           role="alert"
           className="mt-4 rounded-[var(--radius-panel)] border border-clay-rule bg-clay-tint px-3 py-2.5 text-sm text-clay"
         >
+          {error}
+        </p>
+      ) : null}
+    </Dialog>
+  )
+}
+
+function ManageCircleSection({ groupId, detail }: { groupId: Uuid; detail: AjoDetail }) {
+  const [removing, setRemoving] = useState<AjoMemberSummary | null>(null)
+  const [closing, setClosing] = useState(false)
+  const { group, members } = detail
+
+  // Position <= current_cycle means already paid out, or their cycle is
+  // currently collecting — the API rejects removing either, so there's no
+  // point offering a button that can only fail.
+  const removable = members.filter(
+    (m) => m.payout_position > group.current_cycle && m.user_id !== group.admin_id,
+  )
+
+  return (
+    <section className="mt-6">
+      <h2 className="mb-3 text-lg text-ink">Manage circle</h2>
+      <div className="panel px-5 py-4">
+        <h3 className="text-sm font-medium text-ink">Members not yet due a payout</h3>
+        {removable.length === 0 ? (
+          <p className="mt-2 text-sm text-ink-muted">
+            Nobody can be removed right now — every remaining member has either already been paid
+            or their payout is due this cycle.
+          </p>
+        ) : (
+          <ul className="mt-3 divide-y divide-rule">
+            {removable.map((member) => (
+              <li key={member.user_id} className="flex items-center justify-between gap-3 py-2.5">
+                <span className="text-sm text-ink-muted">
+                  Position <span className="numeric">{member.payout_position + 1}</span>
+                </span>
+                <Button size="sm" variant="danger" onClick={() => setRemoving(member)}>
+                  Remove
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {group.status === 'active' ? (
+          <div className="mt-5 border-t border-rule pt-4">
+            <h3 className="text-sm font-medium text-ink">Close this circle</h3>
+            <p className="mt-1 text-[0.8125rem] leading-6 text-ink-faint">
+              Stops every future contribution and closes the circle to new members. Payouts already
+              made are not affected or refunded — this cannot be undone.
+            </p>
+            <Button size="sm" variant="danger" className="mt-3" onClick={() => setClosing(true)}>
+              Close circle
+            </Button>
+          </div>
+        ) : null}
+      </div>
+
+      <RemoveMemberDialog groupId={groupId} member={removing} onOpenChange={(open) => !open && setRemoving(null)} />
+      <CloseCircleDialog groupId={groupId} open={closing} onOpenChange={setClosing} />
+    </section>
+  )
+}
+
+function RemoveMemberDialog({
+  groupId,
+  member,
+  onOpenChange,
+}: {
+  groupId: Uuid
+  member: AjoMemberSummary | null
+  onOpenChange: (open: boolean) => void
+}) {
+  const { toast } = useToast()
+  const removeMember = useRemoveAjoMember()
+  const [error, setError] = useState<string | null>(null)
+
+  async function confirm() {
+    if (!member) return
+    setError(null)
+    try {
+      await removeMember.mutateAsync({ groupId, memberId: member.user_id })
+      toast({ title: 'Member removed', tone: 'success' })
+      onOpenChange(false)
+    } catch (caught) {
+      setError(errorMessage(caught))
+    }
+  }
+
+  return (
+    <Dialog
+      open={member !== null}
+      onOpenChange={(open) => {
+        if (!open) setError(null)
+        onOpenChange(open)
+      }}
+      title="Remove this member?"
+      description={
+        member
+          ? `They'll lose their seat at position ${member.payout_position + 1}. Everyone scheduled after them moves up.`
+          : undefined
+      }
+      dismissable={!removeMember.isPending}
+      footer={
+        <>
+          <Button onClick={() => onOpenChange(false)} disabled={removeMember.isPending}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={confirm} loading={removeMember.isPending} loadingText="Removing">
+            Remove member
+          </Button>
+        </>
+      }
+    >
+      {error ? (
+        <p role="alert" className="rounded-[var(--radius-panel)] border border-clay-rule bg-clay-tint px-3 py-2.5 text-sm text-clay">
+          {error}
+        </p>
+      ) : null}
+    </Dialog>
+  )
+}
+
+function CloseCircleDialog({
+  groupId,
+  open,
+  onOpenChange,
+}: {
+  groupId: Uuid
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { toast } = useToast()
+  const closeAjo = useCloseAjo()
+  const [error, setError] = useState<string | null>(null)
+
+  async function confirm() {
+    setError(null)
+    try {
+      await closeAjo.mutateAsync(groupId)
+      toast({ title: 'Circle closed', tone: 'success' })
+      onOpenChange(false)
+    } catch (caught) {
+      setError(errorMessage(caught))
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setError(null)
+        onOpenChange(next)
+      }}
+      title="Close this circle?"
+      description="No more contributions or new members. Money already paid out stays where it is — this cannot be undone."
+      dismissable={!closeAjo.isPending}
+      footer={
+        <>
+          <Button onClick={() => onOpenChange(false)} disabled={closeAjo.isPending}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={confirm} loading={closeAjo.isPending} loadingText="Closing">
+            Close circle
+          </Button>
+        </>
+      }
+    >
+      {error ? (
+        <p role="alert" className="rounded-[var(--radius-panel)] border border-clay-rule bg-clay-tint px-3 py-2.5 text-sm text-clay">
           {error}
         </p>
       ) : null}

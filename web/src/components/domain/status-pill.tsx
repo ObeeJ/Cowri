@@ -9,6 +9,7 @@ const ajo: Record<AjoStatus, Descriptor> = {
   active: { label: 'Active', tone: 'accent' },
   completed: { label: 'Completed', tone: 'neutral' },
   paused: { label: 'Paused', tone: 'clay' },
+  cancelled: { label: 'Closed', tone: 'muted' },
 }
 
 const bill: Record<BillStatus, Descriptor> = {
