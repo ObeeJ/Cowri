@@ -5,3 +5,6 @@ target/
 !.env.example
 *.md
 scripts/
+web/node_modules
+web/dist
+web/dev-dist

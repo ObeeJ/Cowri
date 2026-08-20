@@ -47,7 +47,10 @@ import type {
   Wallet,
 } from './types'
 
-const RAW_BASE = import.meta.env.VITE_COWRI_API_URL ?? 'http://localhost:3000/v1'
+// Same-origin by default: in production the backend serves this app itself
+// (see backend/src/main.rs's serve_spa), and in dev the Vite proxy forwards
+// /v1 to a locally running API. Override only for a separately hosted client.
+const RAW_BASE = import.meta.env.VITE_COWRI_API_URL ?? '/v1'
 export const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
 
 /** A response the API rejected, carrying its status and error envelope text. */
