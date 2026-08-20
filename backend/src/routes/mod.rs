@@ -254,6 +254,14 @@ pub async fn refresh_token(req: Request) -> Response {
 
 // ── Wallet ────────────────────────────────────────────────────────────────────
 
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+pub async fn list_notifications(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    ok(200, crate::services::notifications::list_for_user(&state.store, user_id))
+}
+
 pub async fn get_wallet(req: Request) -> Response {
     let s       = match state(&req) { Ok(s) => s, Err(e) => return e };
     let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
