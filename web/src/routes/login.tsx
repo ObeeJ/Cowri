@@ -1,10 +1,10 @@
 import { Link, createFileRoute, useRouter, useSearch } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { AuthShell } from '~/components/layout/auth-shell'
-import { Button } from '~/components/ui/button'
-import { Field } from '~/components/ui/field'
+import { Button, IconButton } from '~/components/ui/button'
+import { Field, Input } from '~/components/ui/field'
+import { EyeIcon, EyeOffIcon } from '~/components/icons'
 import { PhoneInput, isPlausiblePhone } from '~/components/ui/phone-input'
-import { PinInput } from '~/components/ui/pin-input'
 import { ApiError, errorMessage } from '~/lib/api/client'
 import { useAuth } from '~/lib/auth'
 import { useToast } from '~/components/ui/toast'
@@ -26,8 +26,9 @@ function LoginPage() {
   const { toast } = useToast()
 
   const [phone, setPhone] = useState(prefilledPhone ?? '')
-  const [pin, setPin] = useState('')
-  const [errors, setErrors] = useState<{ phone?: string; pin?: string; form?: string }>({})
+  const [password, setPassword] = useState('')
+  const [revealed, setRevealed] = useState(false)
+  const [errors, setErrors] = useState<{ phone?: string; password?: string; form?: string }>({})
   const [submitting, setSubmitting] = useState(false)
   const [unverifiedEmailPrompt, setUnverifiedEmailPrompt] = useState(false)
 
@@ -35,14 +36,14 @@ function LoginPage() {
     event.preventDefault()
     const nextErrors: typeof errors = {}
     if (!isPlausiblePhone(phone)) nextErrors.phone = 'Enter the phone number on your account.'
-    if (pin.length < 4) nextErrors.pin = 'Your PIN is 4 to 6 digits.'
+    if (password.length < 8) nextErrors.password = 'Enter your password.'
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
 
     setSubmitting(true)
     setUnverifiedEmailPrompt(false)
     try {
-      await signIn({ phone, pin })
+      await signIn({ phone, password })
       // Only ever an internal path from the route guard. A value that is not a
       // same-site path is discarded rather than followed, so the redirect
       // parameter cannot be used to bounce someone off to another origin.
@@ -65,7 +66,7 @@ function LoginPage() {
   return (
     <AuthShell
       title="Sign in"
-      description="Use the phone number and PIN you registered with."
+      description="Use the phone number and password you registered with."
       footer={
         <>
           New to Cowri?{' '}
@@ -86,24 +87,34 @@ function LoginPage() {
         </Field>
 
         <Field
-          label="PIN"
-          error={errors.pin}
+          label="Password"
+          error={errors.password}
           required
           action={
             <Link
-              to="/forgot-pin"
+              to="/forgot-password"
               className="text-[0.8125rem] text-accent underline underline-offset-4"
             >
-              Forgot your PIN?
+              Forgot your password?
             </Link>
           }
         >
-          <PinInput
-            label="PIN"
-            secret
-            value={pin}
-            onValueChange={setPin}
-            invalid={Boolean(errors.pin)}
+          <Input
+            type={revealed ? 'text' : 'password'}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            invalid={Boolean(errors.password)}
+            suffix={
+              <IconButton
+                type="button"
+                label={revealed ? 'Hide password' : 'Show password'}
+                size="sm"
+                onClick={() => setRevealed((current) => !current)}
+              >
+                {revealed ? <EyeOffIcon size={18} /> : <EyeIcon size={18} />}
+              </IconButton>
+            }
           />
         </Field>
 

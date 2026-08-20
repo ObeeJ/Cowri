@@ -206,6 +206,18 @@ async fn deliver_event(event_type: &str, payload: &serde_json::Value) -> bool {
             }
             true
         }
+        "wallet.debited" => {
+            let email       = payload["email"].as_str().unwrap_or("");
+            let name        = payload["name"].as_str().unwrap_or("there");
+            let amount      = payload["amount_kobo"].as_i64().unwrap_or(0);
+            let balance     = payload["running_balance_kobo"].as_i64().unwrap_or(0);
+            let description = payload["description"].as_str().unwrap_or("A payment");
+            if !email.is_empty() {
+                let (subject, html, plain) = crate::email::wallet_debited_email(name, amount, balance, description);
+                send_email(email, subject, &html, &plain).await;
+            }
+            true
+        }
         "ajo.payout" => {
             let email  = payload["email"].as_str().unwrap_or("");
             let name   = payload["name"].as_str().unwrap_or("there");
@@ -304,7 +316,7 @@ async fn send_email(to: &str, subject: &str, html: &str, plain: &str) {
 
 // ── DB persistence helpers ────────────────────────────────────────────────────
 
-pub async fn persist_user(pool: &sqlx::PgPool, user: &shared::User, pin_hash: &str, wallet: &shared::Wallet) -> Result<(), sqlx::Error> {
+pub async fn persist_user(pool: &sqlx::PgPool, user: &shared::User, password_hash: &str, transaction_pin_hash: &str, wallet: &shared::Wallet) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     let role = match user.role { shared::UserRole::Admin => "admin", _ => "user" };
@@ -319,9 +331,15 @@ pub async fn persist_user(pool: &sqlx::PgPool, user: &shared::User, pin_hash: &s
     .execute(&mut *tx).await?;
 
     sqlx::query(
-        "INSERT INTO pins (user_id, hash) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING"
+        "INSERT INTO passwords (user_id, hash) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING"
     )
-    .bind(user.id).bind(pin_hash)
+    .bind(user.id).bind(password_hash)
+    .execute(&mut *tx).await?;
+
+    sqlx::query(
+        "INSERT INTO transaction_pins (user_id, hash) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING"
+    )
+    .bind(user.id).bind(transaction_pin_hash)
     .execute(&mut *tx).await?;
 
     sqlx::query(

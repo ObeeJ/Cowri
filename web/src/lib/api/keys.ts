@@ -6,6 +6,7 @@ import type { Uuid } from './types'
  */
 export const queryKeys = {
   wallet: ['wallet'] as const,
+  notifications: ['notifications'] as const,
   transactions: (page: number, perPage: number) => ['wallet', 'transactions', page, perPage] as const,
   transactionsAll: ['wallet', 'transactions'] as const,
 

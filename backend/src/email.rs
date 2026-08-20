@@ -126,6 +126,61 @@ pub fn wallet_credited_email(name: &str, amount_kobo: i64, balance_kobo: i64) ->
  (subject, html, plain)
 }
 
+pub fn wallet_debited_email(name: &str, amount_kobo: i64, balance_kobo: i64, description: &str) -> (&'static str, String, String) {
+ let amount = format!("₦{:.2}", amount_kobo as f64 / 100.0);
+ let balance = format!("₦{:.2}", balance_kobo as f64 / 100.0);
+ let subject = "Money left your Cowri wallet";
+
+ let html = format!(r#"<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+ <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 16px;">
+ <tr><td align="center">
+ <table width="100%" style="max-width:480px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+ <tr>
+ <td style="background:#16a34a;padding:32px 40px;text-align:center;">
+ <span style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.5px;">Cowri</span>
+ </td>
+ </tr>
+ <tr>
+ <td style="padding:40px 40px 32px;">
+ <p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#111827;">Money sent</p>
+ <p style="margin:0 0 28px;font-size:15px;color:#6b7280;">Hi {name}, {description} left your wallet.</p>
+
+ <div style="background:#f9fafb;border:2px solid #e5e7eb;border-radius:12px;padding:24px;margin-bottom:28px;">
+ <table width="100%" cellpadding="0" cellspacing="0">
+ <tr>
+ <td style="font-size:13px;color:#6b7280;">Amount sent</td>
+ <td align="right" style="font-size:20px;font-weight:800;color:#111827;">{amount}</td>
+ </tr>
+ <tr><td colspan="2" style="padding:8px 0;"><hr style="border:none;border-top:1px solid #e5e7eb;"/></td></tr>
+ <tr>
+ <td style="font-size:13px;color:#6b7280;">Remaining balance</td>
+ <td align="right" style="font-size:15px;font-weight:600;color:#111827;">{balance}</td>
+ </tr>
+ </table>
+ </div>
+
+ <p style="margin:0;font-size:13px;color:#9ca3af;">Didn't recognise this? Change your password and transaction PIN immediately, then contact support.</p>
+ </td>
+ </tr>
+ <tr><td style="padding:0 40px;"><hr style="border:none;border-top:1px solid #f3f4f6;"/></td></tr>
+ <tr>
+ <td style="padding:24px 40px;text-align:center;">
+ <p style="margin:0;font-size:12px;color:#d1d5db;">© 2026 Cowri · Nigeria</p>
+ </td>
+ </tr>
+ </table>
+ </td></tr>
+ </table>
+</body>
+</html>"#, name=name, amount=amount, balance=balance, description=description);
+
+ let plain = format!("Hi {name},\n\n{description} — {amount} left your wallet.\nRemaining balance: {balance}.\n\nDidn't recognise this? Change your password and transaction PIN immediately, then contact support.\n\nCowri");
+ (subject, html, plain)
+}
+
 pub fn ajo_payout_email(name: &str, amount_kobo: i64, group_name: &str) -> (&'static str, String, String) {
  let amount = format!("₦{:.2}", amount_kobo as f64 / 100.0);
  let subject = "Your Ajo payout has arrived";
@@ -171,8 +226,8 @@ pub fn ajo_payout_email(name: &str, amount_kobo: i64, group_name: &str) -> (&'st
  (subject, html, plain)
 }
 
-pub fn forgot_pin_email(name: &str, otp: &str) -> (&'static str, String, String) {
- let subject = "Reset your Cowri PIN";
+pub fn forgot_password_email(name: &str, otp: &str) -> (&'static str, String, String) {
+ let subject = "Reset your Cowri password";
 
  let html = format!(r#"<!DOCTYPE html>
 <html lang="en">
@@ -188,16 +243,16 @@ pub fn forgot_pin_email(name: &str, otp: &str) -> (&'static str, String, String)
  </tr>
  <tr>
  <td style="padding:40px 40px 32px;">
- <p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#111827;">Reset your PIN </p>
+ <p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#111827;">Reset your password </p>
  <p style="margin:0 0 28px;font-size:15px;color:#6b7280;line-height:1.6;">
- Hi {name}, use the code below to reset your Cowri PIN. It expires in <strong>15 minutes</strong>.
+ Hi {name}, use the code below to reset your Cowri password. It expires in <strong>15 minutes</strong>.
  </p>
  <div style="background:#fff7ed;border:2px solid #fed7aa;border-radius:12px;padding:24px;text-align:center;margin-bottom:28px;">
  <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#ea580c;letter-spacing:1px;text-transform:uppercase;">Reset Code</p>
  <p style="margin:0;font-size:40px;font-weight:800;color:#111827;letter-spacing:10px;">{otp}</p>
  </div>
  <p style="margin:0 0 8px;font-size:13px;color:#9ca3af;line-height:1.6;">
- If you didn't request a PIN reset, your account is safe — ignore this email.
+ If you didn't request a password reset, your account is safe — ignore this email.
  </p>
  <p style="margin:0;font-size:13px;color:#ef4444;font-weight:500;">
  Never share this code with anyone, including Cowri support.
@@ -217,7 +272,7 @@ pub fn forgot_pin_email(name: &str, otp: &str) -> (&'static str, String, String)
 </html>"#, name=name, otp=otp);
 
  let plain = format!(
- "Hi {name},\n\nYour Cowri PIN reset code is: {otp}\n\nExpires in 15 minutes.\n\nNever share this code with anyone.\n\nCowri"
+ "Hi {name},\n\nYour Cowri password reset code is: {otp}\n\nExpires in 15 minutes.\n\nNever share this code with anyone.\n\nCowri"
  );
  (subject, html, plain)
 }

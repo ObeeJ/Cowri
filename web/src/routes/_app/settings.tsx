@@ -56,11 +56,12 @@ function SettingsPage() {
       <section className="panel mt-6 px-5 py-4">
         <h2 className="text-base text-ink">Security</h2>
         <p className="mt-1 text-sm leading-6 text-ink-muted">
-          Your PIN authorises payments. Change it if you think anyone else has seen it.
+          Your password signs you in. Change it if you think anyone else has seen it. Your
+          transaction PIN is asked for separately, every time you move money.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link to="/forgot-pin">
-            <Button leading={<ShieldIcon size={16} />}>Change your PIN</Button>
+          <Link to="/forgot-password">
+            <Button leading={<ShieldIcon size={16} />}>Change your password</Button>
           </Link>
           <Button variant="danger" leading={<SignOutIcon size={16} />} onClick={() => void signOut()}>
             Sign out

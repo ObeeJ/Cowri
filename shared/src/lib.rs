@@ -102,6 +102,18 @@ pub struct OutboxEvent {
 #[serde(rename_all = "snake_case")]
 pub enum OutboxStatus { Pending, Delivered, Failed }
 
+/// A user-facing notification, derived from an outbox event addressed to them.
+/// Not its own table — the outbox is already the durable, ordered record of
+/// what happened; this is just that record read back and worded for a person.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationView {
+    pub id:         Uuid,
+    pub kind:       String,
+    pub title:      String,
+    pub body:       String,
+    pub created_at: DateTime<Utc>,
+}
+
 // ── Ajo ───────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,10 +175,11 @@ pub struct BillParticipant {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterRequest {
-    pub name:  String,
-    pub phone: String,
-    pub email: String,
-    pub pin:   String,
+    pub name:            String,
+    pub phone:           String,
+    pub email:           String,
+    pub password:        String,
+    pub transaction_pin: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -181,21 +194,26 @@ pub struct ResendOtpRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ForgotPinRequest {
+pub struct ForgotPasswordRequest {
     pub email: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ResetPinRequest {
-    pub email:   String,
-    pub otp:     String,
-    pub new_pin: String,
+pub struct ResetPasswordRequest {
+    pub email:        String,
+    pub otp:          String,
+    pub new_password: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginRequest {
-    pub phone: String,
-    pub pin:   String,
+    pub phone:    String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TransactionPinRequest {
+    pub transaction_pin: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

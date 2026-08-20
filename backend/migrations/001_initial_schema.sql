@@ -15,8 +15,15 @@ CREATE TABLE users (
 );
 CREATE INDEX idx_users_phone ON users(phone);
 
--- ── Pins (hashed) ─────────────────────────────────────────────────────────────
-CREATE TABLE pins (
+-- ── Passwords (hashed) — the login credential ───────────────────────────────────
+CREATE TABLE passwords (
+    user_id     UUID        PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    hash        TEXT        NOT NULL
+);
+
+-- ── Transaction PINs (hashed) — re-checked before any money-moving action,
+-- separate from the login password ─────────────────────────────────────────────
+CREATE TABLE transaction_pins (
     user_id     UUID        PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     hash        TEXT        NOT NULL
 );

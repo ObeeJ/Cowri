@@ -118,15 +118,20 @@ export type RegisterRequest = {
   name: string
   phone: string
   email: string
-  pin: string
+  password: string
+  transaction_pin: string
 }
 
 export type VerifyEmailRequest = { email: string; otp: string }
 export type ResendOtpRequest = { email: string }
-export type ForgotPinRequest = { email: string }
-export type ResetPinRequest = { email: string; otp: string; new_pin: string }
-export type LoginRequest = { phone: string; pin: string }
+export type ForgotPasswordRequest = { email: string }
+export type ResetPasswordRequest = { email: string; otp: string; new_password: string }
+export type LoginRequest = { phone: string; password: string }
 export type FundWalletRequest = { amount_kobo: number; email: string }
+/** Body for any money-out action — ajo contribution, bill payment — re-checks
+ * the transaction PIN server-side even though the caller already has a
+ * session, so a stolen cookie alone can't move money. */
+export type TransactionPinRequest = { transaction_pin: string }
 
 export type CreateAjoRequest = {
   name: string
@@ -159,6 +164,17 @@ export type HealthResponse = {
   status: 'ok' | 'degraded'
   db: string
   version: string
+}
+
+/** A user-facing notification, derived server-side from an outbox event
+ * addressed to this account (money received or sent, a circle contribution,
+ * a bill share paid). */
+export type NotificationView = {
+  id: Uuid
+  kind: string
+  title: string
+  body: string
+  created_at: IsoDateTime
 }
 
 export type LedgerCheckResponse = {
