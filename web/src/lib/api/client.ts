@@ -27,7 +27,7 @@ import type {
   BillDetail,
   CreateAjoRequest,
   CreateBillRequest,
-  ForgotPinRequest,
+  ForgotPasswordRequest,
   FundWalletRequest,
   HealthResponse,
   LedgerCheckResponse,
@@ -38,9 +38,10 @@ import type {
   RegisterRequest,
   RegisterResponse,
   ResendOtpRequest,
-  ResetPinRequest,
+  ResetPasswordRequest,
   StatusResponse,
   Transaction,
+  TransactionPinRequest,
   UserRole,
   Uuid,
   VerifyEmailRequest,
@@ -231,11 +232,11 @@ export const api = {
     resendOtp: (body: ResendOtpRequest) =>
       request<MessageResponse>('/auth/resend-otp', { method: 'POST', body, noRefresh: true }),
 
-    forgotPin: (body: ForgotPinRequest) =>
-      request<MessageResponse>('/auth/forgot-pin', { method: 'POST', body, noRefresh: true }),
+    forgotPassword: (body: ForgotPasswordRequest) =>
+      request<MessageResponse>('/auth/forgot-password', { method: 'POST', body, noRefresh: true }),
 
-    resetPin: (body: ResetPinRequest) =>
-      request<MessageResponse>('/auth/reset-pin', { method: 'POST', body, noRefresh: true }),
+    resetPassword: (body: ResetPasswordRequest) =>
+      request<MessageResponse>('/auth/reset-password', { method: 'POST', body, noRefresh: true }),
 
     login: (body: LoginRequest) =>
       request<LoginResponse>('/auth/login', { method: 'POST', body, noRefresh: true }),
@@ -284,8 +285,9 @@ export const api = {
 
     join: (id: Uuid) => request<AjoMember>(`/ajo/${id}/join`, { method: 'POST' }),
 
-    contribute: (id: Uuid) =>
-      request<StatusResponse>(`/ajo/${id}/contribute`, { method: 'POST' }),
+    /** Re-checks the transaction PIN server-side before moving any money. */
+    contribute: (id: Uuid, body: TransactionPinRequest) =>
+      request<StatusResponse>(`/ajo/${id}/contribute`, { method: 'POST', body }),
   },
 
   bills: {
@@ -297,7 +299,9 @@ export const api = {
 
     get: (id: Uuid, signal?: AbortSignal) => request<BillDetail>(`/bills/${id}`, { signal }),
 
-    pay: (id: Uuid) => request<StatusResponse>(`/bills/${id}/pay`, { method: 'POST' }),
+    /** Re-checks the transaction PIN server-side before moving any money. */
+    pay: (id: Uuid, body: TransactionPinRequest) =>
+      request<StatusResponse>(`/bills/${id}/pay`, { method: 'POST', body }),
   },
 
   admin: {

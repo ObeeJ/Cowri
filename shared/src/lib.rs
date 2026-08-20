@@ -163,10 +163,11 @@ pub struct BillParticipant {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterRequest {
-    pub name:  String,
-    pub phone: String,
-    pub email: String,
-    pub pin:   String,
+    pub name:            String,
+    pub phone:           String,
+    pub email:           String,
+    pub password:        String,
+    pub transaction_pin: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -181,21 +182,26 @@ pub struct ResendOtpRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ForgotPinRequest {
+pub struct ForgotPasswordRequest {
     pub email: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ResetPinRequest {
-    pub email:   String,
-    pub otp:     String,
-    pub new_pin: String,
+pub struct ResetPasswordRequest {
+    pub email:        String,
+    pub otp:          String,
+    pub new_password: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginRequest {
-    pub phone: String,
-    pub pin:   String,
+    pub phone:    String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TransactionPinRequest {
+    pub transaction_pin: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

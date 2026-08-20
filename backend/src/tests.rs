@@ -4,12 +4,16 @@ use shared::*;
 
 fn test_store() -> Store { Store::new() }
 
+const TEST_PASSWORD: &str = "correct-horse-battery-9";
+const TEST_TXN_PIN: &str  = "1234";
+
 fn register_user(store: &Store, phone: &str, name: &str) -> uuid::Uuid {
     std::env::set_var("JWT_SECRET", "test-secret-that-is-long-enough-32b");
     let req = RegisterRequest {
         name: name.into(), phone: phone.into(),
         email: format!("{}@test.com", phone),
-        pin: "1234".into(),
+        password: TEST_PASSWORD.into(),
+        transaction_pin: TEST_TXN_PIN.into(),
     };
     let tokens = auth::register(store, req).unwrap();
     // Auto-verify in tests — no email server needed
@@ -24,7 +28,7 @@ fn register_user(store: &Store, phone: &str, name: &str) -> uuid::Uuid {
 fn register_and_login_ok() {
     let store = test_store();
     let uid = register_user(&store, "08011111111", "Alice");
-    let res = auth::login(&store, LoginRequest { phone: "08011111111".into(), pin: "1234".into() });
+    let res = auth::login(&store, LoginRequest { phone: "08011111111".into(), password: TEST_PASSWORD.into() });
     assert!(res.is_ok());
     assert_eq!(res.unwrap().user.id, uid);
 }
@@ -35,7 +39,7 @@ fn duplicate_phone_rejected() {
     register_user(&store, "08022222222", "Bob");
     let res = auth::register(&store, RegisterRequest {
         name: "Bob2".into(), phone: "08022222222".into(),
-        email: "bob2@test.com".into(), pin: "5678".into(),
+        email: "bob2@test.com".into(), password: TEST_PASSWORD.into(), transaction_pin: "5678".into(),
     });
     assert!(res.is_err());
     assert!(res.unwrap_err().error.contains("already registered"));
@@ -45,7 +49,7 @@ fn duplicate_phone_rejected() {
 fn wrong_pin_rejected() {
     let store = test_store();
     register_user(&store, "08033333333", "Carol");
-    let res = auth::login(&store, LoginRequest { phone: "08033333333".into(), pin: "9999".into() });
+    let res = auth::login(&store, LoginRequest { phone: "08033333333".into(), password: "wrong-password-999".into() });
     assert!(res.is_err());
 }
 
@@ -54,9 +58,9 @@ fn rate_limit_locks_after_5_failures() {
     let store = test_store();
     register_user(&store, "08044444444", "Dave");
     for _ in 0..5 {
-        let _ = auth::login(&store, LoginRequest { phone: "08044444444".into(), pin: "0000".into() });
+        let _ = auth::login(&store, LoginRequest { phone: "08044444444".into(), password: "wrong-password-000".into() });
     }
-    let res = auth::login(&store, LoginRequest { phone: "08044444444".into(), pin: "1234".into() });
+    let res = auth::login(&store, LoginRequest { phone: "08044444444".into(), password: TEST_PASSWORD.into() });
     assert!(res.is_err());
     assert!(res.unwrap_err().error.contains("Too many"));
 }
@@ -65,7 +69,7 @@ fn rate_limit_locks_after_5_failures() {
 fn refresh_token_single_use() {
     let store = test_store();
     register_user(&store, "08055555555", "Eve");
-    let tokens = auth::login(&store, LoginRequest { phone: "08055555555".into(), pin: "1234".into() }).unwrap();
+    let tokens = auth::login(&store, LoginRequest { phone: "08055555555".into(), password: TEST_PASSWORD.into() }).unwrap();
     let (_, new_refresh) = auth::rotate_refresh_token(&store, &tokens.refresh_token).unwrap();
     // Old token must be rejected
     let res = auth::rotate_refresh_token(&store, &tokens.refresh_token);
@@ -80,7 +84,7 @@ fn refresh_token_single_use() {
 fn debit_insufficient_balance_rejected() {
     let store = test_store();
     let uid = register_user(&store, "08066666666", "Frank");
-    let res = wallet::debit_wallet(&store, uid, 10_000, "ref", "test");
+    let res = wallet::debit_wallet(&store, uid, 10_000, "ref", "test", TEST_TXN_PIN);
     assert!(res.is_err());
     assert!(res.unwrap_err().error.contains("Insufficient"));
 }
@@ -90,9 +94,23 @@ fn credit_then_debit_updates_balance() {
     let store = test_store();
     let uid = register_user(&store, "08077777777", "Grace");
     wallet::credit_wallet(&store, uid, 50_000, "ref1", "top-up");
-    wallet::debit_wallet(&store, uid, 20_000, "ref2", "spend").unwrap();
+    wallet::debit_wallet(&store, uid, 20_000, "ref2", "spend", TEST_TXN_PIN).unwrap();
     let w = wallet::get_wallet(&store, uid).unwrap();
     assert_eq!(w.available_kobo, 30_000);
+}
+
+#[test]
+fn debit_rejects_wrong_transaction_pin() {
+    let store = test_store();
+    let uid = register_user(&store, "08077777778", "Hank");
+    wallet::credit_wallet(&store, uid, 50_000, "ref1", "top-up");
+    // Login password is never enough on its own — a stolen session cookie
+    // still can't move money without the separate transaction PIN.
+    let res = wallet::debit_wallet(&store, uid, 20_000, "ref2", "spend", "0000");
+    assert!(res.is_err());
+    assert!(res.unwrap_err().error.contains("transaction PIN"));
+    let w = wallet::get_wallet(&store, uid).unwrap();
+    assert_eq!(w.available_kobo, 50_000, "balance must be untouched on a rejected PIN");
 }
 
 // ── Ajo ───────────────────────────────────────────────────────────────────────
@@ -115,8 +133,8 @@ fn ajo_cycle_advances_after_all_contribute() {
     ajo::join_group(&store, group.id, member).unwrap();
 
     // Both contribute — cycle should advance
-    ajo::contribute(&store, group.id, admin).unwrap();
-    ajo::contribute(&store, group.id, member).unwrap();
+    ajo::contribute(&store, group.id, admin, TEST_TXN_PIN).unwrap();
+    ajo::contribute(&store, group.id, member, TEST_TXN_PIN).unwrap();
 
     let updated = store.ajo_groups.lock().unwrap().get(&group.id).cloned().unwrap();
     assert_eq!(updated.current_cycle, 1);
@@ -137,9 +155,9 @@ fn ajo_duplicate_contribution_rejected() {
     ajo::join_group(&store, group.id, member).unwrap();
 
     // First contribution succeeds
-    ajo::contribute(&store, group.id, admin).unwrap();
+    ajo::contribute(&store, group.id, admin, TEST_TXN_PIN).unwrap();
     // Second contribution in same cycle rejected
-    let res = ajo::contribute(&store, group.id, admin);
+    let res = ajo::contribute(&store, group.id, admin, TEST_TXN_PIN);
     assert!(res.is_err());
     assert!(res.unwrap_err().error.contains("Already contributed"));
 }
@@ -156,9 +174,25 @@ fn ajo_non_member_cannot_contribute() {
         frequency: AjoFrequency::Monthly, member_count: 2,
     }).unwrap();
 
-    let res = ajo::contribute(&store, group.id, outsider);
+    let res = ajo::contribute(&store, group.id, outsider, TEST_TXN_PIN);
     assert!(res.is_err());
     assert!(res.unwrap_err().error.contains("Not a member"));
+}
+
+#[test]
+fn ajo_contribute_rejects_wrong_transaction_pin() {
+    let store = test_store();
+    let admin = register_user(&store, "08011100003", "Admin4");
+    wallet::credit_wallet(&store, admin, 100_000, "r1", "fund");
+
+    let group = ajo::create_group(&store, admin, CreateAjoRequest {
+        name: "Guarded".into(), contribution_kobo: 10_000,
+        frequency: AjoFrequency::Monthly, member_count: 2,
+    }).unwrap();
+
+    let res = ajo::contribute(&store, group.id, admin, "0000");
+    assert!(res.is_err());
+    assert!(res.unwrap_err().error.contains("transaction PIN"));
 }
 
 // ── Bills ─────────────────────────────────────────────────────────────────────
@@ -182,7 +216,7 @@ fn bill_creator_must_pay_own_share() {
     assert!(!p.paid);
 
     // Creator pays
-    bills::pay_bill_share(&store, bill.id, creator).unwrap();
+    bills::pay_bill_share(&store, bill.id, creator, TEST_TXN_PIN).unwrap();
     let w = wallet::get_wallet(&store, creator).unwrap();
     assert_eq!(w.available_kobo, 40_000); // 500 - 100
 }
@@ -200,11 +234,44 @@ fn bill_settles_when_all_paid() {
         participant_phones: vec!["08033300002".into()],
     }).unwrap();
 
-    bills::pay_bill_share(&store, bill.id, creator).unwrap();
-    bills::pay_bill_share(&store, bill.id, p2).unwrap();
+    bills::pay_bill_share(&store, bill.id, creator, TEST_TXN_PIN).unwrap();
+    bills::pay_bill_share(&store, bill.id, p2, TEST_TXN_PIN).unwrap();
 
     let updated = store.bills.lock().unwrap().get(&bill.id).cloned().unwrap();
     assert_eq!(updated.status, BillStatus::Settled);
+}
+
+#[test]
+fn failed_payment_does_not_mark_share_paid() {
+    let store = test_store();
+    let creator = register_user(&store, "08044400002", "E");
+    // Deliberately no funding — the debit must fail.
+
+    let bill = bills::create_bill(&store, creator, CreateBillRequest {
+        title: "Unfunded".into(), total_kobo: 10_000,
+        participant_phones: vec![],
+    }).unwrap();
+
+    // Insufficient balance — the share must stay unpaid so it can be retried.
+    let res = bills::pay_bill_share(&store, bill.id, creator, TEST_TXN_PIN);
+    assert!(res.unwrap_err().error.contains("Insufficient"));
+    let p = store.bill_participants.lock().unwrap()
+        .get(&(bill.id, creator)).cloned().unwrap();
+    assert!(!p.paid, "a failed debit must not leave the share marked paid");
+
+    // Wrong transaction PIN — same requirement.
+    wallet::credit_wallet(&store, creator, 50_000, "r1", "fund");
+    let res = bills::pay_bill_share(&store, bill.id, creator, "0000");
+    assert!(res.unwrap_err().error.contains("transaction PIN"));
+    let p = store.bill_participants.lock().unwrap()
+        .get(&(bill.id, creator)).cloned().unwrap();
+    assert!(!p.paid, "a rejected PIN must not leave the share marked paid");
+
+    // Now the real payment succeeds.
+    bills::pay_bill_share(&store, bill.id, creator, TEST_TXN_PIN).unwrap();
+    let p = store.bill_participants.lock().unwrap()
+        .get(&(bill.id, creator)).cloned().unwrap();
+    assert!(p.paid);
 }
 
 #[test]
@@ -218,8 +285,8 @@ fn double_pay_rejected() {
         participant_phones: vec![],
     }).unwrap();
 
-    bills::pay_bill_share(&store, bill.id, creator).unwrap();
-    let res = bills::pay_bill_share(&store, bill.id, creator);
+    bills::pay_bill_share(&store, bill.id, creator, TEST_TXN_PIN).unwrap();
+    let res = bills::pay_bill_share(&store, bill.id, creator, TEST_TXN_PIN);
     assert!(res.is_err());
     assert!(res.unwrap_err().error.contains("Already paid"));
 }
@@ -232,7 +299,7 @@ fn ledger_invariant_holds_after_credit_and_debit() {
     let uid = register_user(&store, "08055500001", "Ledger");
     wallet::credit_wallet(&store, uid, 100_000, "ref-c1", "top-up");
     wallet::credit_wallet(&store, uid, 50_000,  "ref-c2", "top-up");
-    wallet::debit_wallet(&store, uid, 30_000,   "ref-d1", "spend").unwrap();
+    wallet::debit_wallet(&store, uid, 30_000,   "ref-d1", "spend", TEST_TXN_PIN).unwrap();
 
     let wallet_id = store.wallets.lock().unwrap().get(&uid).unwrap().id;
     wallet::assert_ledger_invariant(&store, wallet_id).expect("ledger invariant violated");
@@ -243,7 +310,7 @@ fn ledger_entries_are_append_only() {
     let store = test_store();
     let uid = register_user(&store, "08055500002", "Append");
     wallet::credit_wallet(&store, uid, 20_000, "r1", "fund");
-    wallet::debit_wallet(&store, uid, 10_000, "r2", "spend").unwrap();
+    wallet::debit_wallet(&store, uid, 10_000, "r2", "spend", TEST_TXN_PIN).unwrap();
 
     let ledger = store.ledger.lock().unwrap();
     // Exactly 2 entries — no updates, no deletes
@@ -259,7 +326,7 @@ fn outbox_events_staged_not_delivered_inline() {
     let store = test_store();
     let uid = register_user(&store, "08055500003", "Outbox");
     wallet::credit_wallet(&store, uid, 50_000, "r1", "fund");
-    wallet::debit_wallet(&store, uid, 20_000, "r2", "spend").unwrap();
+    wallet::debit_wallet(&store, uid, 20_000, "r2", "spend", TEST_TXN_PIN).unwrap();
 
     let outbox = store.outbox.lock().unwrap();
     // Both operations staged outbox events
@@ -285,7 +352,7 @@ fn concurrent_debits_never_overdraft() {
     let handles: Vec<_> = (0..10).map(|i| {
         let s = store.clone();
         thread::spawn(move || {
-            wallet::debit_wallet(&s, uid, 200, &format!("debit-{i}"), "concurrent")
+            wallet::debit_wallet(&s, uid, 200, &format!("debit-{i}"), "concurrent", TEST_TXN_PIN)
         })
     }).collect();
 
@@ -313,11 +380,11 @@ fn unverified_user_cannot_login() {
     let store = test_store();
     let req = RegisterRequest {
         name: "Unverified".into(), phone: "08099100001".into(),
-        email: "unverified@test.com".into(), pin: "1234".into(),
+        email: "unverified@test.com".into(), password: TEST_PASSWORD.into(), transaction_pin: TEST_TXN_PIN.into(),
     };
     auth::register(&store, req).unwrap();
     // Do NOT verify — login should fail
-    let res = auth::login(&store, LoginRequest { phone: "08099100001".into(), pin: "1234".into() });
+    let res = auth::login(&store, LoginRequest { phone: "08099100001".into(), password: TEST_PASSWORD.into() });
     assert!(res.is_err());
     assert!(res.unwrap_err().error.contains("not verified"));
 }
@@ -327,7 +394,7 @@ fn otp_verify_flow() {
     let store = test_store();
     let req = RegisterRequest {
         name: "Verified".into(), phone: "08099100002".into(),
-        email: "verified@test.com".into(), pin: "1234".into(),
+        email: "verified@test.com".into(), password: TEST_PASSWORD.into(), transaction_pin: TEST_TXN_PIN.into(),
     };
     let tokens = auth::register(&store, req).unwrap();
     let otp = tokens.otp.unwrap();
@@ -340,7 +407,7 @@ fn otp_verify_flow() {
     auth::verify_otp(&store, "verified@test.com", &otp).unwrap();
 
     // Login now works
-    let login = auth::login(&store, LoginRequest { phone: "08099100002".into(), pin: "1234".into() });
+    let login = auth::login(&store, LoginRequest { phone: "08099100002".into(), password: TEST_PASSWORD.into() });
     assert!(login.is_ok());
 }
 
@@ -349,7 +416,7 @@ fn otp_expires_after_max_attempts() {
     let store = test_store();
     let req = RegisterRequest {
         name: "Lockout".into(), phone: "08099100003".into(),
-        email: "lockout@test.com".into(), pin: "1234".into(),
+        email: "lockout@test.com".into(), password: TEST_PASSWORD.into(), transaction_pin: TEST_TXN_PIN.into(),
     };
     auth::register(&store, req).unwrap();
 

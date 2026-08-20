@@ -3,6 +3,7 @@ use shared::*;
 use uuid::Uuid;
 
 use crate::store::Store;
+use crate::services::auth::verify_transaction_pin;
 
 pub fn get_wallet(store: &Store, user_id: Uuid) -> Option<Wallet> {
     store.wallets.lock().unwrap().get(&user_id).cloned()
@@ -21,24 +22,30 @@ pub fn get_transactions(store: &Store, user_id: Uuid, page: usize, per_page: usi
         .collect()
 }
 
-/// Double-entry debit.
+/// Double-entry debit. Requires the caller's transaction PIN — re-checked here,
+/// the single choke point every money-out path (ajo contribution, bill payment)
+/// goes through, so a stolen session cookie alone can never move money.
 /// Atomically under per-user lock:
-///   1. Check available balance (two-phase: available_kobo, not ledger_kobo)
-///   2. Decrement available_kobo AND ledger_kobo
-///   3. Append immutable LedgerEntry (Debit leg)
-///   4. Append Transaction summary
-///   5. Stage OutboxEvent (delivered async — never in-flight here)
+///   1. Verify transaction PIN
+///   2. Check available balance (two-phase: available_kobo, not ledger_kobo)
+///   3. Decrement available_kobo AND ledger_kobo
+///   4. Append immutable LedgerEntry (Debit leg)
+///   5. Append Transaction summary
+///   6. Stage OutboxEvent (delivered async — never in-flight here)
 pub fn debit_wallet(
     store: &Store,
     user_id: Uuid,
     amount_kobo: i64,
     reference: &str,
     description: &str,
+    transaction_pin: &str,
 ) -> Result<(), ApiError> {
     // Integer-only guard — reject any non-positive amount
     if amount_kobo <= 0 {
         return Err(ApiError { error: "Amount must be a positive integer in kobo".into() });
     }
+
+    verify_transaction_pin(store, user_id, transaction_pin)?;
 
     let lock   = store.wallet_lock(user_id);
     let _guard = lock.lock().map_err(|_| ApiError { error: "Wallet lock error".into() })?;
