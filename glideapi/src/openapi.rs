@@ -49,7 +49,7 @@ impl OpenApi {
     pub fn add_route(&mut self, method: &str, path: &str, summary: &str) {
         // Convert :param style to {param} for OpenAPI spec
         let oapi_path = path.split('/').map(|seg| {
-            if seg.starts_with(':') { format!("{{{}}}", &seg[1..]) } else { seg.to_string() }
+            if let Some(name) = seg.strip_prefix(':') { format!("{{{name}}}") } else { seg.to_string() }
         }).collect::<Vec<_>>().join("/");
 
         let op = Operation {

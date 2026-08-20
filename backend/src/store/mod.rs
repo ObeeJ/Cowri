@@ -5,6 +5,13 @@ use shared::*;
 use uuid::Uuid;
 use sqlx::PgPool;
 
+// Row shapes for `load_from_db`'s hand-written SELECTs — named so the query
+// and the destructuring loop below it aren't each holding an inline 7-9-tuple
+// type.
+type UserRow = (Uuid, String, String, Option<String>, String, bool, DateTime<Utc>);
+type TransactionRow = (Uuid, Uuid, String, i64, String, String, String, DateTime<Utc>);
+type AjoGroupRow = (Uuid, String, Uuid, i64, String, i32, i32, String, DateTime<Utc>);
+
 #[derive(Clone, Default)]
 pub struct Store {
     pub users:              Arc<Mutex<HashMap<Uuid, User>>>,
@@ -68,7 +75,7 @@ impl Store {
         let store = Self::new();
 
         // ── Users + pins ──────────────────────────────────────────────────────
-        let rows: Vec<(Uuid, String, String, Option<String>, String, bool, DateTime<Utc>)> =
+        let rows: Vec<UserRow> =
             sqlx::query_as(
                 "SELECT u.id, u.name, u.phone, u.email, u.role, u.email_verified, u.created_at
                  FROM users u ORDER BY u.created_at"
@@ -117,7 +124,7 @@ impl Store {
         }
 
         // ── Transactions (last 1000 per wallet — enough for hot cache) ────────
-        let txn_rows: Vec<(Uuid, Uuid, String, i64, String, String, String, DateTime<Utc>)> =
+        let txn_rows: Vec<TransactionRow> =
             sqlx::query_as(
                 "SELECT id, wallet_id, kind, amount_kobo, reference, description, status, created_at
                  FROM transactions ORDER BY created_at DESC LIMIT 1000"
@@ -142,7 +149,7 @@ impl Store {
         }
 
         // ── Ajo groups ────────────────────────────────────────────────────────
-        let group_rows: Vec<(Uuid, String, Uuid, i64, String, i32, i32, String, DateTime<Utc>)> =
+        let group_rows: Vec<AjoGroupRow> =
             sqlx::query_as(
                 "SELECT id, name, admin_id, contribution_kobo, frequency,
                         member_count, current_cycle, status, created_at
