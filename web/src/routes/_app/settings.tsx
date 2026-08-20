@@ -1,18 +1,22 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { PageHeader } from '~/components/domain/page-header'
 import { StatusPill } from '~/components/domain/status-pill'
-import { Badge } from '~/components/ui/display'
+import { Avatar, Badge } from '~/components/ui/display'
 import { Button } from '~/components/ui/button'
 import { Field, Input, Radio } from '~/components/ui/field'
+import { useToast } from '~/components/ui/toast'
 import { ExternalIcon, ShieldIcon, SignOutIcon } from '~/components/icons'
 import { useAuth } from '~/lib/auth'
-import { useVerifyBvn } from '~/lib/api/hooks'
+import { useUploadMedia, useVerifyBvn } from '~/lib/api/hooks'
 import { ApiError, errorMessage, API_BASE_URL } from '~/lib/api/client'
 import { useTheme, type ThemePreference } from '~/lib/theme'
 import { formatDate } from '~/lib/format'
 import { formatPhone } from '~/components/ui/phone-input'
 import type { KycStatus } from '~/lib/api/types'
+
+const MAX_AVATAR_BYTES = 10 * 1024 * 1024
+const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 export const Route = createFileRoute('/_app/settings')({
   component: SettingsPage,
@@ -32,24 +36,27 @@ function SettingsPage() {
       <section className="panel px-5 py-4">
         <h2 className="text-base text-ink">Your account</h2>
         {user ? (
-          <dl className="mt-3 divide-y divide-rule">
-            <Row term="Name">{user.name}</Row>
-            <Row term="Phone number">
-              <span className="numeric">{formatPhone(user.phone)}</span>
-            </Row>
-            <Row term="Email">
-              <span className="flex flex-wrap items-center gap-2">
-                {user.email ?? 'Not set'}
-                {user.email_verified ? (
-                  <Badge tone="accent">Verified</Badge>
-                ) : (
-                  <Badge tone="clay">Not verified</Badge>
-                )}
-              </span>
-            </Row>
-            <Row term="Role">{isAdmin ? <Badge tone="accent">Administrator</Badge> : 'Member'}</Row>
-            <Row term="Member since">{formatDate(user.created_at)}</Row>
-          </dl>
+          <>
+            <AvatarUpload />
+            <dl className="mt-3 divide-y divide-rule">
+              <Row term="Name">{user.name}</Row>
+              <Row term="Phone number">
+                <span className="numeric">{formatPhone(user.phone)}</span>
+              </Row>
+              <Row term="Email">
+                <span className="flex flex-wrap items-center gap-2">
+                  {user.email ?? 'Not set'}
+                  {user.email_verified ? (
+                    <Badge tone="accent">Verified</Badge>
+                  ) : (
+                    <Badge tone="clay">Not verified</Badge>
+                  )}
+                </span>
+              </Row>
+              <Row term="Role">{isAdmin ? <Badge tone="accent">Administrator</Badge> : 'Member'}</Row>
+              <Row term="Member since">{formatDate(user.created_at)}</Row>
+            </dl>
+          </>
         ) : null}
         <p className="mt-4 text-[0.8125rem] leading-6 text-ink-faint">
           Cowri has no endpoint for editing these details yet. To change your name, phone number or
@@ -133,6 +140,57 @@ function SettingsPage() {
         </dl>
       </section>
     </>
+  )
+}
+
+function AvatarUpload() {
+  const { user, setUser } = useAuth()
+  const uploadMedia = useUploadMedia()
+  const { toast } = useToast()
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  if (!user) return null
+
+  async function handleFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = '' // let the same file be re-picked after an error
+    if (!file) return
+
+    if (!ALLOWED_AVATAR_TYPES.includes(file.type)) {
+      toast({ title: 'Unsupported file type', description: 'Use a JPEG, PNG or WebP image.', tone: 'warning' })
+      return
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      toast({ title: 'Image is too large', description: 'Keep it under 10MB.', tone: 'warning' })
+      return
+    }
+
+    try {
+      const media = await uploadMedia.mutateAsync({ file, purpose: 'avatar' })
+      setUser({ ...user!, avatar_url: media.public_url })
+      toast({ title: 'Profile photo updated', tone: 'success' })
+    } catch (caught) {
+      toast({ title: 'Could not update your photo', description: errorMessage(caught), tone: 'warning' })
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-4">
+      <Avatar name={user.name} src={user.avatar_url} size="lg" />
+      <div>
+        <Button size="sm" loading={uploadMedia.isPending} loadingText="Uploading" onClick={() => inputRef.current?.click()}>
+          Change photo
+        </Button>
+        <p className="mt-1 text-[0.8125rem] text-ink-faint">JPEG, PNG or WebP, up to 10MB.</p>
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ALLOWED_AVATAR_TYPES.join(',')}
+        className="hidden"
+        onChange={handleFile}
+      />
+    </div>
   )
 }
 

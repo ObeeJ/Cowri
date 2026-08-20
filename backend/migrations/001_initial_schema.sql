@@ -22,6 +22,7 @@ CREATE TABLE users (
     kyc_reference     TEXT,
     kyc_failure_reason TEXT,
     bvn_hash          TEXT,
+    avatar_url        TEXT,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_users_phone ON users(phone);
@@ -158,3 +159,19 @@ CREATE TABLE bill_participants (
     PRIMARY KEY (bill_id, user_id)
 );
 CREATE INDEX idx_bill_participants_user ON bill_participants(user_id);
+
+-- ── Media ─────────────────────────────────────────────────────────────────────
+-- One row per object actually confirmed uploaded to R2 — the presign step
+-- itself writes nothing here, since a presigned URL that's issued but never
+-- used should never look like a real upload.
+CREATE TABLE media (
+    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    object_key    TEXT        NOT NULL UNIQUE,
+    purpose       TEXT        NOT NULL,
+    content_type  TEXT        NOT NULL,
+    size_bytes    BIGINT      NOT NULL CHECK (size_bytes > 0),
+    public_url    TEXT        NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_media_user ON media(user_id);

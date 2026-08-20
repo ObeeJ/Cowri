@@ -8,7 +8,7 @@ use sqlx::PgPool;
 // Row shapes for `load_from_db`'s hand-written SELECTs — named so the query
 // and the destructuring loop below it aren't each holding an inline 7-9-tuple
 // type.
-type UserRow = (Uuid, String, String, Option<String>, String, bool, String, DateTime<Utc>);
+type UserRow = (Uuid, String, String, Option<String>, String, bool, String, Option<String>, DateTime<Utc>);
 
 pub fn parse_kyc_status(s: &str) -> KycStatus {
     match s {
@@ -88,7 +88,7 @@ impl Store {
         // ── Users + pins ──────────────────────────────────────────────────────
         let rows: Vec<UserRow> =
             sqlx::query_as(
-                "SELECT u.id, u.name, u.phone, u.email, u.role, u.email_verified, u.kyc_status, u.created_at
+                "SELECT u.id, u.name, u.phone, u.email, u.role, u.email_verified, u.kyc_status, u.avatar_url, u.created_at
                  FROM users u ORDER BY u.created_at"
             )
             .fetch_all(pool).await?;
@@ -107,12 +107,13 @@ impl Store {
             let mut passwords       = store.passwords.lock().unwrap();
             let mut transaction_pins = store.transaction_pins.lock().unwrap();
 
-            for (id, name, phone, email, role, email_verified, kyc_status, created_at) in rows {
+            for (id, name, phone, email, role, email_verified, kyc_status, avatar_url, created_at) in rows {
                 let user = User {
                     id, name, phone: phone.clone(), email,
                     role: if role == "admin" { UserRole::Admin } else { UserRole::User },
                     email_verified,
                     kyc_status: parse_kyc_status(&kyc_status),
+                    avatar_url,
                     created_at,
                 };
                 phones.insert(phone, id);

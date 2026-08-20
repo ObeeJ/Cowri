@@ -262,6 +262,104 @@ pub async fn list_notifications(req: Request) -> Response {
     ok(200, crate::services::notifications::list_for_user(&state.store, user_id))
 }
 
+// ── Media ─────────────────────────────────────────────────────────────────────
+
+pub async fn presign_media_upload(req: Request) -> Response {
+    let user_id = match auth(&req) { Ok(id) => id, Err(e) => return e };
+    let Json(body) = match Json::<PresignUploadRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+
+    match crate::services::media::presign_upload(user_id, &body.content_type, body.size_bytes, &body.purpose) {
+        Ok(p) => ok(200, PresignUploadResponse {
+            upload_url: p.upload_url,
+            object_key: p.object_key,
+            public_url: p.public_url,
+        }),
+        Err(e) => ok(502, e),
+    }
+}
+
+/// The client calls this once its direct PUT to R2 has actually succeeded —
+/// nothing is written to the `media` table (or, for an avatar, to the
+/// user's `avatar_url`) before then, so a presigned URL that's issued but
+/// never used leaves no trace.
+pub async fn confirm_media_upload(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let Json(body) = match Json::<ConfirmUploadRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+
+    // The object key must belong to this user's own namespace — confirming
+    // an upload isn't a way to claim someone else's object.
+    if !body.object_key.starts_with(&format!("{}/{}/", body.purpose, user_id)) {
+        return err(403, "Object key does not belong to this account");
+    }
+
+    let public_url = format!(
+        "{}/{}",
+        std::env::var("R2_PUBLIC_URL").unwrap_or_default().trim_end_matches('/'),
+        body.object_key
+    );
+
+    let media = MediaItem {
+        id: uuid::Uuid::new_v4(),
+        object_key: body.object_key.clone(),
+        purpose: body.purpose.clone(),
+        content_type: body.content_type.clone(),
+        size_bytes: body.size_bytes,
+        public_url,
+        created_at: chrono::Utc::now(),
+    };
+
+    if db::persist_media(&state.db, &media, user_id).await.is_err() {
+        return err(502, "Could not record the upload");
+    }
+
+    if media.purpose == "avatar" {
+        let _ = db::set_avatar(&state.db, user_id, Some(&media.public_url)).await;
+        if let Some(u) = state.store.users.lock().unwrap().get_mut(&user_id) {
+            u.avatar_url = Some(media.public_url.clone());
+        }
+    }
+
+    ok(201, media)
+}
+
+pub async fn delete_media(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let media_id = match req.params.get("id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+        Some(id) => id, None => return err(400, "Invalid media ID"),
+    };
+
+    let object_key = match db::media_object_key_owned_by(&state.db, media_id, user_id).await {
+        Some(key) => key,
+        None => return err(404, "Media not found"),
+    };
+
+    if let Err(e) = crate::services::media::delete_object(&object_key).await {
+        return ok(502, e);
+    }
+    let _ = db::delete_media_row(&state.db, media_id).await;
+
+    // Clear the avatar rather than leave it pointing at a deleted object.
+    let was_avatar = state.store.users.lock().unwrap()
+        .get(&user_id)
+        .and_then(|u| u.avatar_url.as_ref())
+        .is_some_and(|url| url.ends_with(&object_key));
+
+    if was_avatar {
+        let _ = db::set_avatar(&state.db, user_id, None).await;
+        if let Some(u) = state.store.users.lock().unwrap().get_mut(&user_id) {
+            u.avatar_url = None;
+        }
+    }
+
+    ok(200, serde_json::json!({ "status": "deleted" }))
+}
+
 // ── KYC ───────────────────────────────────────────────────────────────────────
 
 pub async fn verify_bvn(req: Request) -> Response {

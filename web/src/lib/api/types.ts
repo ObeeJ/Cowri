@@ -22,6 +22,7 @@ export type User = {
   role: UserRole
   email_verified: boolean
   kyc_status: KycStatus
+  avatar_url: string | null
   created_at: IsoDateTime
 }
 
@@ -145,6 +146,24 @@ export type LoginRequest = { phone: string; password: string }
 export type FundWalletRequest = { amount_kobo: number; email: string }
 export type VerifyBvnRequest = { bvn: string }
 export type KycStatusResponse = { kyc_status: KycStatus }
+
+export type PresignUploadRequest = { content_type: string; size_bytes: number; purpose: string }
+export type PresignUploadResponse = { upload_url: string; object_key: string; public_url: string }
+export type ConfirmUploadRequest = {
+  object_key: string
+  content_type: string
+  size_bytes: number
+  purpose: string
+}
+export type MediaItem = {
+  id: Uuid
+  object_key: string
+  purpose: string
+  content_type: string
+  size_bytes: number
+  public_url: string
+  created_at: IsoDateTime
+}
 /** Body for any money-out action — ajo contribution, bill payment — re-checks
  * the transaction PIN server-side even though the caller already has a
  * session, so a stolen cookie alone can't move money. */
