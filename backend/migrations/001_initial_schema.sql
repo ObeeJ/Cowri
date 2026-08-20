@@ -5,29 +5,15 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ── Users ─────────────────────────────────────────────────────────────────────
 CREATE TABLE users (
-    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    name              TEXT        NOT NULL,
-    phone             TEXT        NOT NULL UNIQUE,
-    email             TEXT,
-    role              TEXT        NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
-    email_verified    BOOLEAN     NOT NULL DEFAULT FALSE,
-    -- KYC. Only a one-way hash of the BVN is ever stored, never the number
-    -- itself — Prembly is the system of record for the raw BVN, Cowri only
-    -- needs to know the outcome and (via the hash) that it hasn't already
-    -- been used to verify a different account.
-    kyc_status        TEXT        NOT NULL DEFAULT 'unverified'
-                                  CHECK (kyc_status IN ('unverified','pending','verified','failed')),
-    kyc_verified_at   TIMESTAMPTZ,
-    kyc_provider      TEXT,
-    kyc_reference     TEXT,
-    kyc_failure_reason TEXT,
-    bvn_hash          TEXT,
-    avatar_url        TEXT,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    name           TEXT        NOT NULL,
+    phone          TEXT        NOT NULL UNIQUE,
+    email          TEXT,
+    role           TEXT        NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
+    email_verified BOOLEAN     NOT NULL DEFAULT FALSE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_users_phone ON users(phone);
--- One verified BVN can back exactly one account.
-CREATE UNIQUE INDEX idx_users_bvn_hash ON users(bvn_hash) WHERE bvn_hash IS NOT NULL;
 
 -- ── Passwords (hashed) — the login credential ───────────────────────────────────
 CREATE TABLE passwords (
@@ -121,7 +107,7 @@ CREATE TABLE ajo_groups (
     frequency           TEXT        NOT NULL CHECK (frequency IN ('daily','weekly','monthly')),
     member_count        INT         NOT NULL CHECK (member_count BETWEEN 2 AND 50),
     current_cycle       INT         NOT NULL DEFAULT 0,
-    status              TEXT        NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed','paused','cancelled')),
+    status              TEXT        NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed','paused')),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -159,19 +145,3 @@ CREATE TABLE bill_participants (
     PRIMARY KEY (bill_id, user_id)
 );
 CREATE INDEX idx_bill_participants_user ON bill_participants(user_id);
-
--- ── Media ─────────────────────────────────────────────────────────────────────
--- One row per object actually confirmed uploaded to R2 — the presign step
--- itself writes nothing here, since a presigned URL that's issued but never
--- used should never look like a real upload.
-CREATE TABLE media (
-    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id       UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    object_key    TEXT        NOT NULL UNIQUE,
-    purpose       TEXT        NOT NULL,
-    content_type  TEXT        NOT NULL,
-    size_bytes    BIGINT      NOT NULL CHECK (size_bytes > 0),
-    public_url    TEXT        NOT NULL,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX idx_media_user ON media(user_id);
