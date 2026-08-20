@@ -80,6 +80,7 @@ async fn main() {
         .route("POST", "/v1/auth/refresh",         routes::refresh_token)
         .route("POST", "/v1/auth/logout",          routes::logout)
         .route("GET",  "/v1/wallet",               routes::get_wallet)
+        .route("GET",  "/v1/notifications",         routes::list_notifications)
         .route("GET",  "/v1/wallet/transactions",  routes::get_transactions)
         .route("POST", "/v1/wallet/fund",          routes::fund_wallet)
         .route("POST", "/v1/webhook/paystack",     routes::paystack_webhook)

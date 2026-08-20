@@ -32,6 +32,20 @@ const privateRead = {
   staleTime: 15_000,
 } satisfies Partial<UseQueryOptions>
 
+// ── Notifications ───────────────────────────────────────────────────────────
+
+/** Polled every 20s while signed in — this app has no push channel yet, so a
+ * short poll is what stands in for "real time" until one exists. */
+export function useNotifications(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.notifications,
+    queryFn: ({ signal }) => api.notifications.list(signal),
+    enabled,
+    refetchInterval: 20_000,
+    ...privateRead,
+  })
+}
+
 // ── Wallet ──────────────────────────────────────────────────────────────────
 
 export function useWallet(enabled = true) {

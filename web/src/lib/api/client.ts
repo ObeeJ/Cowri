@@ -34,6 +34,7 @@ import type {
   LoginRequest,
   LoginResponse,
   MessageResponse,
+  NotificationView,
   PaystackInitResponse,
   RegisterRequest,
   RegisterResponse,
@@ -246,6 +247,12 @@ export const api = {
 
     logout: () =>
       request<StatusResponse>('/auth/logout', { method: 'POST', noRefresh: true }),
+  },
+
+  notifications: {
+    /** Polled by useNotificationToasts to surface events as they arrive. */
+    list: (signal?: AbortSignal) =>
+      request<NotificationView[]>('/notifications', { signal }),
   },
 
   wallet: {
