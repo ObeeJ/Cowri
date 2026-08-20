@@ -6,6 +6,8 @@ import { ParticipantSplitRow } from '~/components/domain/bill'
 import { StatusPill } from '~/components/domain/status-pill'
 import { Button } from '~/components/ui/button'
 import { Dialog } from '~/components/ui/dialog'
+import { Field } from '~/components/ui/field'
+import { PinInput } from '~/components/ui/pin-input'
 import { Progress } from '~/components/ui/display'
 import { Skeleton, SkeletonGroup } from '~/components/ui/skeleton'
 import { ErrorState } from '~/components/ui/states'
@@ -176,13 +178,20 @@ function PayShareDialog({
   const { toast } = useToast()
   const pay = usePayBillShare()
   const [error, setError] = useState<string | null>(null)
+  const [transactionPin, setTransactionPin] = useState('')
+  const [pinError, setPinError] = useState(false)
 
   const shortfall = availableKobo === undefined ? null : Math.max(shareKobo - availableKobo, 0)
 
   async function handlePay() {
     setError(null)
+    setPinError(false)
+    if (transactionPin.length < 4) {
+      setPinError(true)
+      return
+    }
     try {
-      await pay.mutateAsync(billId)
+      await pay.mutateAsync({ id: billId, transactionPin })
       onOpenChange(false)
       toast({
         title: 'Share paid',
@@ -194,6 +203,10 @@ function PayShareDialog({
         setError('This share has already been paid.')
       } else if (caught instanceof ApiError && caught.isInsufficientFunds) {
         setError('There is not enough in your wallet to cover this share.')
+      } else if (caught instanceof ApiError && caught.status === 403) {
+        setPinError(true)
+        setTransactionPin('')
+        setError('Incorrect transaction PIN.')
       } else {
         setError(errorMessage(caught))
       }
@@ -249,7 +262,21 @@ function PayShareDialog({
         <p className="mt-4 rounded-[var(--radius-panel)] border border-clay-rule bg-clay-tint px-3 py-2.5 text-sm text-clay">
           You need {formatKobo(shortfall)} more in your wallet to pay this share.
         </p>
-      ) : null}
+      ) : (
+        <Field label="Transaction PIN" className="mt-4" required>
+          <PinInput
+            label="Transaction PIN"
+            secret
+            value={transactionPin}
+            onValueChange={(next) => {
+              setTransactionPin(next)
+              setPinError(false)
+            }}
+            invalid={pinError}
+            onComplete={handlePay}
+          />
+        </Field>
+      )}
 
       {error ? (
         <p

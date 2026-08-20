@@ -304,7 +304,7 @@ async fn send_email(to: &str, subject: &str, html: &str, plain: &str) {
 
 // ── DB persistence helpers ────────────────────────────────────────────────────
 
-pub async fn persist_user(pool: &sqlx::PgPool, user: &shared::User, pin_hash: &str, wallet: &shared::Wallet) -> Result<(), sqlx::Error> {
+pub async fn persist_user(pool: &sqlx::PgPool, user: &shared::User, password_hash: &str, transaction_pin_hash: &str, wallet: &shared::Wallet) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     let role = match user.role { shared::UserRole::Admin => "admin", _ => "user" };
@@ -319,9 +319,15 @@ pub async fn persist_user(pool: &sqlx::PgPool, user: &shared::User, pin_hash: &s
     .execute(&mut *tx).await?;
 
     sqlx::query(
-        "INSERT INTO pins (user_id, hash) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING"
+        "INSERT INTO passwords (user_id, hash) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING"
     )
-    .bind(user.id).bind(pin_hash)
+    .bind(user.id).bind(password_hash)
+    .execute(&mut *tx).await?;
+
+    sqlx::query(
+        "INSERT INTO transaction_pins (user_id, hash) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING"
+    )
+    .bind(user.id).bind(transaction_pin_hash)
     .execute(&mut *tx).await?;
 
     sqlx::query(

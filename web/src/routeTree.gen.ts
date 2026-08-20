@@ -12,12 +12,12 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as DesignSystemRouteImport } from './routes/design-system'
-import { Route as ForgotPinRouteImport } from './routes/forgot-pin'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as HowAjoWorksRouteImport } from './routes/how-ajo-works'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as RegisterRouteImport } from './routes/register'
-import { Route as ResetPinRouteImport } from './routes/reset-pin'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SecurityRouteImport } from './routes/security'
 import { Route as SplitBillsRouteImport } from './routes/split-bills'
 import { Route as TermsRouteImport } from './routes/terms'
@@ -53,9 +53,9 @@ const DesignSystemRoute = DesignSystemRouteImport.update({
   path: '/design-system',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ForgotPinRoute = ForgotPinRouteImport.update({
-  id: '/forgot-pin',
-  path: '/forgot-pin',
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HowAjoWorksRoute = HowAjoWorksRouteImport.update({
@@ -78,9 +78,9 @@ const RegisterRoute = RegisterRouteImport.update({
   path: '/register',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ResetPinRoute = ResetPinRouteImport.update({
-  id: '/reset-pin',
-  path: '/reset-pin',
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SecurityRoute = SecurityRouteImport.update({
@@ -187,12 +187,12 @@ const AppAjoJoinGroupIdRoute = AppAjoJoinGroupIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/design-system': typeof DesignSystemRoute
-  '/forgot-pin': typeof ForgotPinRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/how-ajo-works': typeof HowAjoWorksRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/register': typeof RegisterRoute
-  '/reset-pin': typeof ResetPinRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/security': typeof SecurityRoute
   '/split-bills': typeof SplitBillsRoute
   '/terms': typeof TermsRoute
@@ -217,12 +217,12 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/design-system': typeof DesignSystemRoute
-  '/forgot-pin': typeof ForgotPinRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/how-ajo-works': typeof HowAjoWorksRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/register': typeof RegisterRoute
-  '/reset-pin': typeof ResetPinRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/security': typeof SecurityRoute
   '/split-bills': typeof SplitBillsRoute
   '/terms': typeof TermsRoute
@@ -248,12 +248,12 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/design-system': typeof DesignSystemRoute
-  '/forgot-pin': typeof ForgotPinRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/how-ajo-works': typeof HowAjoWorksRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/register': typeof RegisterRoute
-  '/reset-pin': typeof ResetPinRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/security': typeof SecurityRoute
   '/split-bills': typeof SplitBillsRoute
   '/terms': typeof TermsRoute
@@ -280,12 +280,12 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/design-system'
-    | '/forgot-pin'
+    | '/forgot-password'
     | '/how-ajo-works'
     | '/login'
     | '/privacy'
     | '/register'
-    | '/reset-pin'
+    | '/reset-password'
     | '/security'
     | '/split-bills'
     | '/terms'
@@ -310,12 +310,12 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/design-system'
-    | '/forgot-pin'
+    | '/forgot-password'
     | '/how-ajo-works'
     | '/login'
     | '/privacy'
     | '/register'
-    | '/reset-pin'
+    | '/reset-password'
     | '/security'
     | '/split-bills'
     | '/terms'
@@ -340,12 +340,12 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/design-system'
-    | '/forgot-pin'
+    | '/forgot-password'
     | '/how-ajo-works'
     | '/login'
     | '/privacy'
     | '/register'
-    | '/reset-pin'
+    | '/reset-password'
     | '/security'
     | '/split-bills'
     | '/terms'
@@ -372,12 +372,12 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   DesignSystemRoute: typeof DesignSystemRoute
-  ForgotPinRoute: typeof ForgotPinRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   HowAjoWorksRoute: typeof HowAjoWorksRoute
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
   RegisterRoute: typeof RegisterRoute
-  ResetPinRoute: typeof ResetPinRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SecurityRoute: typeof SecurityRoute
   SplitBillsRoute: typeof SplitBillsRoute
   TermsRoute: typeof TermsRoute
@@ -407,11 +407,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DesignSystemRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/forgot-pin': {
-      id: '/forgot-pin'
-      path: '/forgot-pin'
-      fullPath: '/forgot-pin'
-      preLoaderRoute: typeof ForgotPinRouteImport
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/how-ajo-works': {
@@ -442,11 +442,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/reset-pin': {
-      id: '/reset-pin'
-      path: '/reset-pin'
-      fullPath: '/reset-pin'
-      preLoaderRoute: typeof ResetPinRouteImport
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/security': {
@@ -646,12 +646,12 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   DesignSystemRoute: DesignSystemRoute,
-  ForgotPinRoute: ForgotPinRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   HowAjoWorksRoute: HowAjoWorksRoute,
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,
   RegisterRoute: RegisterRoute,
-  ResetPinRoute: ResetPinRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SecurityRoute: SecurityRoute,
   SplitBillsRoute: SplitBillsRoute,
   TermsRoute: TermsRoute,

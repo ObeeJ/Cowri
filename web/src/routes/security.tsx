@@ -74,8 +74,13 @@ function SecurityPage() {
             browser.
           </p>
           <p>
-            Repeated failed sign-in attempts on a phone number are rate limited. Your PIN is stored
-            only as a hash.
+            Repeated failed sign-in attempts on a phone number are rate limited. Your password is
+            stored only as a hash — Cowri never sees or stores it in plain text.
+          </p>
+          <p>
+            Signing in is not enough to move money. Every payment — an ajo contribution, a bill
+            share, a transfer — asks again for your separate transaction PIN, so a stolen session
+            alone can never spend from your wallet.
           </p>
         </Section>
 

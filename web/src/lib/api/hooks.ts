@@ -119,8 +119,9 @@ export function useJoinAjo() {
 export function useContributeAjo() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: Uuid) => api.ajo.contribute(id),
-    onSuccess: (_data, id) => {
+    mutationFn: ({ id, transactionPin }: { id: Uuid; transactionPin: string }) =>
+      api.ajo.contribute(id, { transaction_pin: transactionPin }),
+    onSuccess: (_data, { id }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.wallet })
       void queryClient.invalidateQueries({ queryKey: queryKeys.transactionsAll })
       void queryClient.invalidateQueries({ queryKey: queryKeys.ajoDetail(id) })
@@ -162,8 +163,9 @@ export function useCreateBill() {
 export function usePayBillShare() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: Uuid) => api.bills.pay(id),
-    onSuccess: (_data, id) => {
+    mutationFn: ({ id, transactionPin }: { id: Uuid; transactionPin: string }) =>
+      api.bills.pay(id, { transaction_pin: transactionPin }),
+    onSuccess: (_data, { id }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.wallet })
       void queryClient.invalidateQueries({ queryKey: queryKeys.transactionsAll })
       void queryClient.invalidateQueries({ queryKey: queryKeys.billDetail(id) })
@@ -186,12 +188,12 @@ export function useResendOtp() {
   return useMutation({ mutationFn: api.auth.resendOtp })
 }
 
-export function useForgotPin() {
-  return useMutation({ mutationFn: api.auth.forgotPin })
+export function useForgotPassword() {
+  return useMutation({ mutationFn: api.auth.forgotPassword })
 }
 
-export function useResetPin() {
-  return useMutation({ mutationFn: api.auth.resetPin })
+export function useResetPassword() {
+  return useMutation({ mutationFn: api.auth.resetPassword })
 }
 
 // ── Admin ───────────────────────────────────────────────────────────────────
