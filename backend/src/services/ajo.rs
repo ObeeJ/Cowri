@@ -210,6 +210,20 @@ pub fn remove_member(store: &Store, group_id: Uuid, requester_id: Uuid, target_i
             error: "This member has already received their payout, or their cycle is in progress, and can no longer be removed".into(),
         });
     }
+    // A future payout position alone isn't enough: everyone is expected to
+    // contribute every cycle, not just whoever's turn it is. If this member
+    // already contributed this cycle and is then removed, their contribution
+    // stays counted in contributions_this_cycle while member_count drops —
+    // the cycle could complete without everyone remaining having actually
+    // paid in. Contributions aren't reversible either (they credit the
+    // receiver immediately), so the only safe move is to refuse the removal.
+    if store.ajo_contributions.lock().unwrap()
+        .contains(&(group_id, target_id, group.current_cycle))
+    {
+        return Err(ApiError {
+            error: "This member has already contributed this cycle and can no longer be removed".into(),
+        });
+    }
 
     members.remove(&(group_id, target_id));
 
