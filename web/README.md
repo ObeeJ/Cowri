@@ -5,14 +5,14 @@ The React frontend for the Cowri API. It talks to the existing Rust backend in
 client-side ledger, no role it can grant itself.
 
 ```
-npm install
-npm run dev               # http://localhost:5173
+bun install
+bun run dev               # http://localhost:5173
 ```
 
-That's the whole setup. `npm run dev` proxies `/v1` to `http://localhost:3000`
-(see `vite.config.ts`), so it talks to a locally running API with no `.env`,
-and no `CORS_ORIGIN` to configure on the API either — the proxy makes it look
-same-origin to the browser. `npm run build` produces the same same-origin call
+That's the whole setup. `bun run dev` rewrites `/v1` to `http://localhost:3000`
+(see `next.config.ts`), so it talks to a locally running API with no `.env`,
+and no `CORS_ORIGIN` to configure on the API either — the rewrite makes it look
+same-origin to the browser. `bun run build` produces the same same-origin call
 shape in production, because the backend serves this app's build itself (see
 `backend/src/main.rs`). `.env.example` documents the one case that needs an
 override: the client deployed separately from the API it talks to.
@@ -21,27 +21,31 @@ override: the client deployed separately from the API it talks to.
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Vite dev server with the route generator watching |
-| `npm run build` | Typecheck, then a production build into `dist/` |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run preview` | Serve `dist/` on port 4173 |
-| `npm run mock-api` | A stand-in API on port 3000 for working offline |
-| `npm run smoke` | Render every public route in Chromium and fail on any console error |
-| `npm run smoke:app` | The same for the authenticated routes, against the mock API |
+| `bun run dev` | Next.js dev server (webpack), with the route generator watching |
+| `bun run build` | Typecheck, then a static export into `out/` |
+| `bun run typecheck` | `tsc --noEmit` |
+| `bun run preview` | Serve `out/` on port 4173, proxying `/v1` to a locally running API |
+| `bun run mock-api` | A stand-in API on port 3000 for working offline |
+| `bun run smoke` | Render every public route in Chromium and fail on any console error |
+| `bun run smoke:app` | The same for the authenticated routes, against the mock API |
 
-The two smoke scripts need `dist/` built and `npm run preview` running. `smoke:app`
-also needs `npm run mock-api`. `smoke` defaults to `http://localhost:4173`; set
-`SMOKE_BASE` to point it elsewhere — e.g. `SMOKE_BASE=http://localhost:3000 npm run smoke`
+The two smoke scripts need `out/` built and `bun run preview` running. `smoke:app`
+also needs `bun run mock-api`. `smoke` defaults to `http://localhost:4173`; set
+`SMOKE_BASE` to point it elsewhere — e.g. `SMOKE_BASE=http://localhost:3000 bun run smoke`
 to check the build the real backend is serving, once `cargo run -p backend` has
 picked it up. They are development aids, not a test suite: they catch a route
 that throws on render, and nothing finer.
+
+Next.js defaults to Turbopack, which doesn't run the webpack plugins this app
+depends on (the TanStack Router codegen, the Serwist service worker build), so
+`dev` and `build` both pass `--webpack` explicitly.
 
 ## How this app talks to the API
 
 **Same origin, by default.** The backend serves this app's build (see
 `serve_spa` in `glideapi/src/lib.rs` and its use in `backend/src/main.rs`), so
 in production there is one origin, one cookie jar, and no CORS to configure.
-`VITE_COWRI_API_URL` only needs setting if this client is ever deployed
+`NEXT_PUBLIC_COWRI_API_URL` only needs setting if this client is ever deployed
 separately from the API — a CDN in front of the app, a different host for the
 API — in which case set `CORS_ORIGIN` on the API to this app's origin too, or
 the session cookies will be dropped by the browser without a visible error.
@@ -82,7 +86,13 @@ number would lock those accounts out. See `src/components/ui/phone-input.tsx`.
 ```
 src/
   styles.css              Design tokens. Both themes redefine the same names.
-  main.tsx                Providers and the router
+  sw.ts                   Service worker (Serwist): fonts + static assets only
+  app/
+    layout.tsx            Root HTML shell: fonts, theme-flash script, metadata
+    page.tsx              Loads app-client.tsx with `ssr: false`
+    app-client.tsx        Providers and the router — never runs at build time,
+                          since the whole app reads from `window` on first render
+    manifest.ts           Web app manifest
   routes/                 File-based routes; _app is the authenticated layout
   components/
     icons.tsx             The whole icon set, drawn for this product
@@ -119,8 +129,9 @@ an empty page and a row of error states.
   actually does.
 - It does not retry a failed mutation automatically. A double debit should never
   come from a background retry.
-- It does not cache API responses in the service worker. Only the app shell and
-  fonts are precached; a stale balance is worse than a spinner.
+- It does not cache API responses, or the app shell itself, in the service
+  worker. Only static assets and fonts are precached; a stale balance — or a
+  stale build — is worse than a spinner.
 
 ## Known gaps
 

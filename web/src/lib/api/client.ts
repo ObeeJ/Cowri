@@ -56,9 +56,9 @@ import type {
 } from './types'
 
 // Same-origin by default: in production the backend serves this app itself
-// (see backend/src/main.rs's serve_spa), and in dev the Vite proxy forwards
+// (see backend/src/main.rs's serve_spa), and in dev next.config.ts rewrites
 // /v1 to a locally running API. Override only for a separately hosted client.
-const RAW_BASE = import.meta.env.VITE_COWRI_API_URL ?? '/v1'
+const RAW_BASE = process.env.NEXT_PUBLIC_COWRI_API_URL ?? '/v1'
 export const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
 
 /** A response the API rejected, carrying its status and error envelope text. */

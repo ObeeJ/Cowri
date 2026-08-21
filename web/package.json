@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Cowri web client. React frontend for the Cowri Rust API.",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --port 4173",
+    "dev": "next dev --port 5173 --webpack",
+    "build": "tsc --noEmit && next build --webpack",
+    "preview": "node preview-server.mjs",
     "typecheck": "tsc --noEmit",
     "mock-api": "node mock-api.mjs",
     "smoke": "node smoke.mjs",
@@ -15,22 +15,21 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.5",
-    "@tanstack/react-router": "^1.135.4",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "@tanstack/react-router": "^1",
+    "next": "^16.3.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.1.16",
-    "@tanstack/react-router-devtools": "^1.135.4",
-    "@tanstack/router-plugin": "^1.135.4",
+    "@serwist/next": "^9.5.12",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@tanstack/router-plugin": "^1",
     "@types/node": "^26.2.0",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
-    "@vitejs/plugin-react": "^5.1.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "playwright": "^1.62.1",
-    "tailwindcss": "^4.1.16",
-    "typescript": "^5.9.3",
-    "vite": "^7.1.11",
-    "vite-plugin-pwa": "^1.0.3"
+    "serwist": "^9.5.12",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3"
   }
 }
