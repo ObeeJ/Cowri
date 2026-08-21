@@ -21,7 +21,7 @@ Rust REST API on the backend, serving a React web client (`web/`). In production
 | Layer | Technology |
 |-------|-----------|
 | Backend | Rust, GlideAPI, Tokio, Postgres |
-| Web client | React 19, TanStack Router, TanStack Query, Tailwind v4 |
+| Web client | React 19, Next.js (static export), TanStack Router, TanStack Query, Tailwind v4 |
 | Payments | Paystack |
 
 ---
@@ -73,8 +73,8 @@ neither CORS nor an API URL needs configuring:
 # Backend (port 3000)
 cargo run -p backend
 
-# Web client (port 5173) — proxies /v1 to the backend above
-cd web && npm install && npm run dev
+# Web client (port 5173) — rewrites /v1 to the backend above
+cd web && bun install && bun run dev
 ```
 
 ### Run as it deploys
@@ -83,12 +83,12 @@ In production the backend serves the web client's own build, so the whole app
 is one process on one origin:
 
 ```bash
-cd web && npm install && npm run build   # writes web/dist
-cd .. && cargo run -p backend --release  # picks up web/dist automatically
+cd web && bun install && bun run build   # writes web/out
+cd .. && cargo run -p backend --release  # picks up web/out automatically
 ```
 
 `STATIC_DIR` overrides where the backend looks for a build (default
-`web/dist`, resolved relative to the working directory the API is started
+`web/out`, resolved relative to the working directory the API is started
 from). If no build is found there, the API still runs, just without serving a
 client — useful when working on the backend alone.
 

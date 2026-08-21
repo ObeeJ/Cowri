@@ -18,19 +18,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+      - uses: oven-sh/setup-bun@v2
 
       - name: Install
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Typecheck
-        run: npm run typecheck
+        run: bun run typecheck
 
       - name: Build
-        run: npx vite build
+        run: bun run build
         env:
-          VITE_COWRI_API_URL: "https://api.cowri.app/v1"
+          NEXT_PUBLIC_COWRI_API_URL: "https://api.cowri.app/v1"
