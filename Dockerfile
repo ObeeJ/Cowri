@@ -1,15 +1,15 @@
 # ── Web client build stage ───────────────────────────────────────────────────
-FROM node:22-slim AS web-builder
+FROM oven/bun:1-slim AS web-builder
 
 WORKDIR /app/web
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
+COPY web/package.json web/bun.lock ./
+RUN bun install --frozen-lockfile
 
 COPY web/ ./
 # Same-origin default: the backend serves this build itself, so the app talks
 # to /v1 on its own host and needs no separate API URL or CORS setup.
-ENV VITE_COWRI_API_URL=/v1
-RUN npm run build
+ENV NEXT_PUBLIC_COWRI_API_URL=/v1
+RUN bun run build
 
 # ── Backend build stage ───────────────────────────────────────────────────────
 FROM rust:latest AS builder
@@ -33,7 +33,7 @@ USER cowri
 WORKDIR /app
 COPY --from=builder /app/target/release/backend ./backend
 COPY --from=builder /app/backend/migrations ./migrations
-COPY --from=web-builder /app/web/dist ./web/dist
+COPY --from=web-builder /app/web/out ./web/out
 
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

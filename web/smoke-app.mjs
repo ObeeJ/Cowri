@@ -10,6 +10,7 @@ const profile = {
   email: 'adaeze@example.com',
   role: 'admin',
   email_verified: true,
+  kyc_status: 'verified',
   created_at: '2026-02-11T09:14:00Z',
 }
 

@@ -339,9 +339,9 @@ async fn serve_static(dir: &std::path::Path, req_path: &str) -> Option<hyper::Re
     let is_file = tokio::fs::metadata(&candidate).await.map(|m| m.is_file()).unwrap_or(false);
     if is_file {
         let bytes = tokio::fs::read(&candidate).await.ok()?;
-        // Vite fingerprints everything under /assets/, so it's safe to cache
-        // those responses forever; nothing else gets that treatment.
-        let cache_control = if req_path.starts_with("/assets/") {
+        // Next.js fingerprints everything under /_next/static/, so it's safe to
+        // cache those responses forever; nothing else gets that treatment.
+        let cache_control = if req_path.starts_with("/_next/static/") {
             "public, max-age=31536000, immutable"
         } else {
             "no-cache"
