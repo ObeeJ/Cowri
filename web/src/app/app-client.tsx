@@ -1,13 +1,12 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
+'use client'
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { ApiError } from '~/lib/api/client'
 import { AuthProvider } from '~/lib/auth'
 import { ThemeProvider } from '~/lib/theme'
 import { ToastProvider } from '~/components/ui/toast'
-import { routeTree } from './routeTree.gen'
-import './styles.css'
+import { routeTree } from '~/routeTree.gen'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,11 +41,8 @@ declare module '@tanstack/react-router' {
   }
 }
 
-const container = document.getElementById('root')
-if (!container) throw new Error('Missing #root element')
-
-createRoot(container).render(
-  <StrictMode>
+export default function App() {
+  return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
@@ -56,5 +52,5 @@ createRoot(container).render(
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
-  </StrictMode>,
-)
+  )
+}

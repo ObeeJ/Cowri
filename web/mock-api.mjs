@@ -21,6 +21,7 @@ const user = {
   email: 'adaeze@example.com',
   role: 'admin',
   email_verified: true,
+  kyc_status: 'verified',
   created_at: '2026-02-11T09:14:00Z',
 }
 
@@ -103,6 +104,7 @@ const routes = {
   'GET /v1/ajo': () => groups,
   'GET /v1/bills': () => bills,
   'GET /v1/health': () => ({ status: 'ok', db: 'ok', version: '0.1.0' }),
+  'GET /v1/notifications': () => [],
   'GET /v1/ledger/check': () => ({ status: 'ok', checked: 128, violations: [] }),
   'GET /v1/admin/dashboard': () => ({
     users: 214,
@@ -118,9 +120,9 @@ const routes = {
   }),
   'GET /v1/admin/users': () => ({
     users: [
-      { id: uid, name: user.name, phone: user.phone, role: 'admin', balance_kobo: 4_875_000, created_at: user.created_at },
-      { id: 'aaaa1111-0000-4000-8000-000000000001', name: 'Tunde Bakare', phone: '08099887766', role: 'user', balance_kobo: 1_250_000, created_at: '2026-03-02T10:00:00Z' },
-      { id: 'bbbb2222-0000-4000-8000-000000000002', name: 'Ngozi Eze', phone: '07011223344', role: 'user', balance_kobo: 0, created_at: '2026-05-19T16:30:00Z' },
+      { id: uid, name: user.name, phone: user.phone, role: 'admin', kyc_status: 'verified', balance_kobo: 4_875_000, created_at: user.created_at },
+      { id: 'aaaa1111-0000-4000-8000-000000000001', name: 'Tunde Bakare', phone: '08099887766', role: 'user', kyc_status: 'pending', balance_kobo: 1_250_000, created_at: '2026-03-02T10:00:00Z' },
+      { id: 'bbbb2222-0000-4000-8000-000000000002', name: 'Ngozi Eze', phone: '07011223344', role: 'user', kyc_status: 'unverified', balance_kobo: 0, created_at: '2026-05-19T16:30:00Z' },
     ],
     total: 3,
   }),

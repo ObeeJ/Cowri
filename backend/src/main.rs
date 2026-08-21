@@ -63,8 +63,8 @@ async fn main() {
     // Serving it from this process means production needs no CORS setup and no
     // second origin: the app and the API it talks to are the same host. Falls
     // back to API-only if the client hasn't been built — `cargo run -p backend`
-    // works before anyone has run `npm run build` in web/.
-    let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "web/dist".into());
+    // works before anyone has run `bun run build` in web/.
+    let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "web/out".into());
 
     tracing::info!(" Cowri API on http://0.0.0.0:3000");
 
@@ -116,7 +116,7 @@ async fn main() {
         app = app.serve_spa(static_dir);
     } else {
         tracing::warn!(
-            "No built web client at {static_dir}/index.html — run `npm run build` in web/ to serve it. API-only for now."
+            "No built web client at {static_dir}/index.html — run `bun run build` in web/ to serve it. API-only for now."
         );
     }
 
