@@ -385,8 +385,13 @@ pub async fn verify_bvn(req: Request) -> Response {
     // A BVN that cleared Prembly's check but is already claimed by a
     // different Cowri account still fails here — one verified identity,
     // one account.
+    let legacy = crate::services::kyc::hash_bvn_legacy(&body.bvn);
     let (verified, failure_reason) = if outcome.verified
-        && crate::services::kyc::bvn_already_claimed(&state.db, &outcome.bvn_hash, user_id).await
+        && crate::services::kyc::bvn_already_claimed_any(
+            &state.db,
+            &[&outcome.bvn_hash, &legacy],
+            user_id,
+        ).await
     {
         (false, Some("This BVN is already linked to another Cowri account".to_string()))
     } else {
@@ -482,15 +487,17 @@ pub async fn paystack_webhook(req: Request) -> Response {
         Err(_) => return err(500, "Internal server error"),
     };
 
-    // Verify x-paystack-signature
-    let signature = req.headers.get("x-paystack-signature").cloned().unwrap_or_default();
-    let mut mac = Hmac::<Sha512>::new_from_slice(secret_key.as_bytes())
-        .expect("HMAC accepts any key size");
-    mac.update(&req.body);
-    let expected = hex::encode(mac.finalize().into_bytes());
-
-    if signature != expected {
-        return err(401, "Invalid signature");
+    // Verify x-paystack-signature (skipped in mock mode for local E2E)
+    let mock = std::env::var("COWRI_PAYMENTS_MODE").as_deref() == Ok("mock");
+    if !mock {
+        let signature = req.headers.get("x-paystack-signature").cloned().unwrap_or_default();
+        let mut mac = Hmac::<Sha512>::new_from_slice(secret_key.as_bytes())
+            .expect("HMAC accepts any key size");
+        mac.update(&req.body);
+        let expected = hex::encode(mac.finalize().into_bytes());
+        if signature != expected {
+            return err(401, "Invalid signature");
+        }
     }
 
     let body: serde_json::Value = match serde_json::from_slice(&req.body) {
@@ -503,7 +510,55 @@ pub async fn paystack_webhook(req: Request) -> Response {
         let reference   = body["data"]["reference"].as_str().unwrap_or("");
         let amount_kobo = body["data"]["amount"].as_i64().unwrap_or(0);
 
-        // Webhook idempotency — check if this reference was already credited in the ledger
+        if reference.is_empty() {
+            return ok(200, serde_json::json!({ "status": "ignored", "reason": "empty_reference" }));
+        }
+
+        let mut settled_obligation = false;
+
+        // 1) Obligation / bill / gift / ajo / p2p attempts (preferred)
+        match db::settle_payment_attempt(&state.db, reference, amount_kobo).await {
+            Ok(db::SettleResult::Settled { bill, ajo, .. }) => {
+                if let Some(sync) = bill {
+                    crate::services::payments::sync_bill_share_from_db_row(
+                        &state.store,
+                        sync.bill_id,
+                        sync.user_id,
+                        sync.amount_paid_kobo,
+                        sync.share_kobo,
+                        &sync.bill_status,
+                    );
+                }
+                if let Some(sync) = ajo {
+                    crate::services::payments::sync_ajo_from_settle(
+                        &state.store,
+                        sync.group_id,
+                        sync.contributor_id,
+                        sync.cycle as u32,
+                        sync.current_cycle as u32,
+                        &sync.status,
+                    );
+                }
+                settled_obligation = true;
+            }
+            Ok(db::SettleResult::AlreadySettled { .. }) => {
+                settled_obligation = true;
+            }
+            Ok(db::SettleResult::NotFound) => {}
+            Err(e) => {
+                tracing::error!(error = %e, reference, "settle_payment_attempt failed");
+                return err(500, "Settlement failed");
+            }
+        }
+
+        let mut mandate_user = db::payer_for_reference(&state.db, reference).await;
+
+        if settled_obligation {
+            maybe_persist_paystack_mandate(&state, &body, mandate_user).await;
+            return ok(200, serde_json::json!({ "status": "obligation_settled" }));
+        }
+
+        // 2) Legacy / wallet top-up fund path (display mirror credit)
         if db::webhook_already_processed(&state.db, reference).await {
             return ok(200, serde_json::json!({ "status": "already_processed" }));
         }
@@ -523,22 +578,66 @@ pub async fn paystack_webhook(req: Request) -> Response {
         };
 
         if let Some(uid) = user_id {
-            if amount_kobo > 0 && !reference.is_empty() {
-                // Persist to DB (atomic: ledger + outbox in one transaction)
+            if amount_kobo > 0 {
                 let wallet_id = state.store.wallets.lock().unwrap()
                     .get(&uid).map(|w| w.id);
                 if let Some(wid) = wallet_id {
-                    let _ = db::credit(&state.db, wid, amount_kobo, reference, "Wallet top-up via Paystack").await;
+                    if let Err(e) = db::credit(&state.db, wid, amount_kobo, reference, "Wallet top-up via Paystack").await {
+                        tracing::error!(error = %e, "fund credit failed");
+                        return err(500, "Credit failed");
+                    }
                 }
-                // Also update in-memory cache
                 crate::services::wallet::credit_wallet(
                     &state.store, uid, amount_kobo, reference, "Wallet top-up via Paystack",
                 );
+                maybe_persist_paystack_mandate(&state, &body, Some(uid)).await;
+                return ok(200, serde_json::json!({ "status": "funded" }));
             }
         }
+
+        let _ = db::record_webhook_orphan(
+            &state.db, reference, &body, "unmatched_charge_success",
+        ).await;
+        return ok(200, serde_json::json!({ "status": "unmatched", "recorded": true }));
     }
 
     ok(200, serde_json::json!({ "status": "ok" }))
+}
+
+async fn maybe_persist_paystack_mandate(
+    state: &crate::AppState,
+    body: &serde_json::Value,
+    user_id: Option<uuid::Uuid>,
+) {
+    let auth = &body["data"]["authorization"];
+    let code = auth["authorization_code"].as_str().unwrap_or("");
+    if code.is_empty() {
+        return;
+    }
+    if auth["reusable"].as_bool() == Some(false) {
+        return;
+    }
+    let Some(uid) = user_id else { return };
+    let email = body["data"]["customer"]["email"].as_str()
+        .or_else(|| {
+            state.store.users.lock().unwrap().get(&uid).and_then(|u| u.email.as_deref()).map(|s| s.to_string())
+        });
+    let email = match email {
+        Some(ref e) if !e.is_empty() => e.clone(),
+        Some(e) => e,
+        None => return,
+    };
+    if let Err(e) = db::upsert_mandate(
+        &state.db,
+        uid,
+        code,
+        &email,
+        auth["last4"].as_str(),
+        auth["bank"].as_str(),
+        auth["card_type"].as_str(),
+    ).await {
+        tracing::warn!(error = %e, "could not persist paystack mandate");
+    }
 }
 
 // ── Ajo ───────────────────────────────────────────────────────────────────────
@@ -589,20 +688,23 @@ pub async fn contribute_ajo(req: Request) -> Response {
     let Json(body) = match Json::<TransactionPinRequest>::from_request(&req) {
         Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
     };
-    match crate::services::ajo::contribute(&state.store, group_id, user_id, &body.transaction_pin) {
-        Ok(_)  => {
-            let g = state.store.ajo_groups.lock().unwrap().get(&group_id).cloned();
-            if let Some(g) = g {
-                let completed = g.status == AjoStatus::Completed;
-                let _ = db::persist_ajo_contribution(
-                    &state.db, group_id, user_id,
-                    if completed { g.current_cycle } else { g.current_cycle.saturating_sub(1) },
-                    g.current_cycle, completed,
-                ).await;
-            }
-            ok(200, serde_json::json!({ "status": "contributed" }))
-        }
-        Err(e) if e.error.contains("Insufficient") => ok(402, e),
+
+    let idem = req.headers.get("x-idempotency-key").cloned()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let cycle = state.store.ajo_groups.lock().unwrap()
+        .get(&group_id).map(|g| g.current_cycle).unwrap_or(0);
+    let idem_key = format!("ajo-{group_id}-{user_id}-{cycle}-{idem}");
+
+    match crate::services::ajo::initiate_contribution(
+        &state.store, &state.db, group_id, user_id, &body.transaction_pin, &idem_key,
+    ).await {
+        Ok(session) => ok(200, serde_json::json!({
+            "status": "checkout_required",
+            "authorization_url": session.authorization_url,
+            "reference": session.reference,
+            "obligation_id": session.obligation_id,
+            "amount_kobo": session.amount_kobo,
+        })),
         Err(e) if e.error.contains("Already contributed") => ok(409, e),
         Err(e) if e.error.contains("transaction PIN") => ok(403, e),
         Err(e) => ok(400, e),
@@ -628,7 +730,14 @@ pub async fn create_bill(req: Request) -> Response {
                         .get(&(b.id, *uid)).map(|p| (*uid, p.share_kobo))
                 })
                 .collect();
-            let _ = db::persist_bill(&state.db, &b, &participants).await;
+            if let Err(e) = db::persist_bill(&state.db, &b, &participants).await {
+                tracing::error!(error = %e, "persist_bill failed");
+                // Roll back in-memory insert so we don't lie to the client.
+                state.store.bills.lock().unwrap().remove(&b.id);
+                state.store.bill_participant_index.lock().unwrap().remove(&b.id);
+                state.store.bill_participants.lock().unwrap().retain(|(bid, _), _| *bid != b.id);
+                return err(500, "Could not save bill");
+            }
             ok(201, b)
         }
         Err(e) => ok(400, e),
@@ -648,18 +757,80 @@ pub async fn pay_bill(req: Request) -> Response {
     let bill_id = match req.params.get("id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
         Some(id) => id, None => return err(400, "Invalid bill ID"),
     };
-    let Json(body) = match Json::<TransactionPinRequest>::from_request(&req) {
+    let Json(body) = match Json::<PayBillRequest>::from_request(&req) {
         Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
     };
-    match crate::services::bills::pay_bill_share(&state.store, bill_id, user_id, &body.transaction_pin) {
-        Ok(_)  => {
-            let all_paid = state.store.bills.lock().unwrap()
-                .get(&bill_id).map(|b| b.status == BillStatus::Settled).unwrap_or(false);
-            let _ = db::persist_bill_payment(&state.db, bill_id, user_id, all_paid).await;
-            ok(200, serde_json::json!({ "status": "paid" }))
+
+    let idem = req.headers.get("x-idempotency-key").cloned()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let idem_key = format!("billpay-{bill_id}-{user_id}-{idem}");
+
+    if let Some((status, cached)) = db::get_idempotency(&state.db, &idem_key).await {
+        return Response { status, body: cached, headers: vec![] };
+    }
+
+    match crate::services::bills::initiate_bill_payment(
+        &state.store, &state.db, bill_id, user_id, &body, &idem_key,
+    ).await {
+        Ok(session) => {
+            let payload = serde_json::json!({
+                "status": "checkout_required",
+                "authorization_url": session.authorization_url,
+                "reference": session.reference,
+                "obligation_id": session.obligation_id,
+                "amount_kobo": session.amount_kobo,
+            });
+            let resp = ok(200, &payload);
+            db::set_idempotency(&state.db, &idem_key, resp.status, &resp.body).await;
+            resp
         }
-        Err(e) if e.error.contains("Insufficient") => ok(402, e),
         Err(e) if e.error.contains("Already paid") => ok(409, e),
+        Err(e) if e.error.contains("transaction PIN") => ok(403, e),
+        Err(e) if e.error.contains("deadline") => ok(400, e),
+        Err(e) => ok(400, e),
+    }
+}
+
+pub async fn set_bill_installment_plan(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let bill_id = match req.params.get("id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+        Some(id) => id, None => return err(400, "Invalid bill ID"),
+    };
+    let Json(body) = match Json::<SetInstallmentPlanRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+    match crate::services::bills::set_installment_plan(
+        &state.store, &state.db, bill_id, user_id, body.installments,
+    ).await {
+        Ok(()) => ok(200, serde_json::json!({ "status": "plan_saved" })),
+        Err(e) => ok(400, e),
+    }
+}
+
+pub async fn gift_bill_share(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let bill_id = match req.params.get("id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+        Some(id) => id, None => return err(400, "Invalid bill ID"),
+    };
+    let Json(body) = match Json::<GiftBillRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+    let idem = req.headers.get("x-idempotency-key").cloned()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let idem_key = format!("billgift-{bill_id}-{user_id}-{}-{idem}", body.for_user_id);
+
+    match crate::services::bills::initiate_gift_payment(
+        &state.store, &state.db, bill_id, user_id, &body, &idem_key,
+    ).await {
+        Ok(session) => ok(200, serde_json::json!({
+            "status": "checkout_required",
+            "authorization_url": session.authorization_url,
+            "reference": session.reference,
+            "obligation_id": session.obligation_id,
+            "amount_kobo": session.amount_kobo,
+        })),
         Err(e) if e.error.contains("transaction PIN") => ok(403, e),
         Err(e) => ok(400, e),
     }
@@ -756,6 +927,7 @@ pub async fn remove_ajo_member(req: Request) -> Response {
 // ── Reconciliation ────────────────────────────────────────────────────────────
 
 pub async fn ledger_check(req: Request) -> Response {
+    if let Err(e) = crate::middleware::require_admin(&req) { return e; }
     let state = match state(&req) { Ok(s) => s, Err(e) => return e };
 
     let wallets: Vec<_> = state.store.wallets.lock().unwrap().values().cloned().collect();
@@ -779,6 +951,183 @@ pub async fn ledger_check(req: Request) -> Response {
         "checked":    checked,
         "violations": violations,
     }))
+}
+
+pub async fn set_ajo_payment_mode(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let group_id = match req.params.get("id").and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+        Some(id) => id, None => return err(400, "Invalid group ID"),
+    };
+    let Json(body) = match Json::<SetPaymentModeRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+
+    if !state.store.ajo_members.lock().unwrap().contains_key(&(group_id, user_id)) {
+        return err(403, "Not a member of this group");
+    }
+
+    let mode = match body.mode {
+        PaymentMode::Manual => "manual",
+        PaymentMode::Auto => "auto",
+    };
+
+    if mode == "auto" {
+        // Require an active mandate before enabling auto.
+        let has_mandate: Option<(uuid::Uuid,)> = sqlx::query_as(
+            "SELECT id FROM payment_mandates WHERE user_id = $1 AND status = 'active' LIMIT 1"
+        )
+        .bind(user_id)
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten();
+        let Some((mandate_id,)) = has_mandate else {
+            return err(400, "Link a Paystack card/mandate before enabling auto-debit");
+        };
+
+        if let Err(e) = sqlx::query(
+            "UPDATE ajo_members SET payment_mode = 'auto', mandate_id = $1, auto_consent_at = NOW()
+             WHERE group_id = $2 AND user_id = $3"
+        )
+        .bind(mandate_id).bind(group_id).bind(user_id)
+        .execute(&state.db).await
+        {
+            tracing::error!(error = %e, "set ajo auto failed");
+            return err(500, "Could not enable auto-debit");
+        }
+
+        let freq_days = state.store.ajo_groups.lock().unwrap().get(&group_id).map(|g| match g.frequency {
+            AjoFrequency::Daily => 1,
+            AjoFrequency::Weekly => 7,
+            AjoFrequency::Monthly => 30,
+        }).unwrap_or(7);
+        let next = chrono::Utc::now() + chrono::Duration::days(freq_days);
+        let _ = sqlx::query(
+            "INSERT INTO payment_schedules (kind, user_id, ajo_group_id, mandate_id, next_run_at)
+             VALUES ('ajo', $1, $2, $3, $4)"
+        )
+        .bind(user_id).bind(group_id).bind(mandate_id).bind(next)
+        .execute(&state.db).await;
+    } else if let Err(e) = sqlx::query(
+        "UPDATE ajo_members SET payment_mode = 'manual', mandate_id = NULL
+         WHERE group_id = $1 AND user_id = $2"
+    )
+    .bind(group_id).bind(user_id)
+    .execute(&state.db).await
+    {
+        tracing::error!(error = %e, "set ajo manual failed");
+        return err(500, "Could not disable auto-debit");
+    }
+
+    ok(200, serde_json::json!({ "status": "updated", "mode": mode }))
+}
+
+/// Persist a Paystack authorization after the user completes a mandate-link charge.
+pub async fn save_payment_mandate(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+
+    #[derive(serde::Deserialize)]
+    struct Body {
+        authorization_code: String,
+        email: String,
+        #[serde(default)]
+        card_last4: Option<String>,
+        #[serde(default)]
+        bank: Option<String>,
+        #[serde(default)]
+        card_type: Option<String>,
+    }
+    let Json(body) = match Json::<Body>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+    if body.authorization_code.trim().is_empty() || body.email.trim().is_empty() {
+        return err(400, "authorization_code and email are required");
+    }
+
+    let id = uuid::Uuid::new_v4();
+    if let Err(e) = sqlx::query(
+        "INSERT INTO payment_mandates
+            (id, user_id, authorization_code, email, card_last4, bank, card_type, reusable, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,true,'active')"
+    )
+    .bind(id)
+    .bind(user_id)
+    .bind(body.authorization_code.trim())
+    .bind(body.email.trim())
+    .bind(body.card_last4)
+    .bind(body.bank)
+    .bind(body.card_type)
+    .execute(&state.db)
+    .await
+    {
+        tracing::error!(error = %e, "save mandate failed");
+        return err(500, "Could not save mandate");
+    }
+
+    ok(201, serde_json::json!({ "status": "saved", "mandate_id": id }))
+}
+
+pub async fn p2p_payment(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let Json(body) = match Json::<P2pPaymentRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+
+    if let Err(e) = crate::services::payments::require_pin(&state.store, user_id, &body.transaction_pin) {
+        return ok(403, e);
+    }
+    if body.amount_kobo < 100 {
+        return err(400, "Minimum transfer is ₦1");
+    }
+
+    let payee_id = {
+        let phones = state.store.phone_index.lock().unwrap();
+        phones.get(body.to_phone.trim()).copied()
+    };
+    let Some(payee_id) = payee_id else {
+        return err(404, "Recipient not found");
+    };
+    if payee_id == user_id {
+        return err(400, "Cannot send to yourself");
+    }
+
+    let (email, phone) = {
+        let users = state.store.users.lock().unwrap();
+        let u = users.get(&user_id).unwrap();
+        (u.email.clone().unwrap_or_default(), u.phone.clone())
+    };
+    if email.is_empty() {
+        return err(400, "Email required for payment checkout");
+    }
+
+    let idem = req.headers.get("x-idempotency-key").cloned()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let idem_key = format!("p2p-{user_id}-{payee_id}-{idem}");
+
+    let obligation_id = match db::insert_obligation(
+        &state.db, "p2p", user_id, Some(payee_id), body.amount_kobo,
+        None, None, None, None, &idem_key,
+    ).await {
+        Ok(id) => id,
+        Err(_) => return err(500, "Could not create transfer"),
+    };
+
+    match crate::services::payments::init_checkout(
+        &state.db, &email, Some(&phone), obligation_id, body.amount_kobo,
+        &format!("{idem_key}:attempt"), "/wallet/verify",
+    ).await {
+        Ok(session) => ok(200, serde_json::json!({
+            "status": "checkout_required",
+            "authorization_url": session.authorization_url,
+            "reference": session.reference,
+            "obligation_id": session.obligation_id,
+            "amount_kobo": session.amount_kobo,
+        })),
+        Err(e) => ok(400, e),
+    }
 }
 
 // ── Health ────────────────────────────────────────────────────────────────────

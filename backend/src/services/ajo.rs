@@ -3,7 +3,6 @@ use shared::*;
 use uuid::Uuid;
 
 use crate::store::Store;
-use crate::services::wallet::{credit_wallet, debit_wallet};
 
 pub fn create_group(store: &Store, admin_id: Uuid, req: CreateAjoRequest) -> Result<AjoGroup, ApiError> {
     if req.name.trim().is_empty() || req.name.len() > 100 {
@@ -71,7 +70,13 @@ pub fn join_group(store: &Store, group_id: Uuid, user_id: Uuid) -> Result<AjoMem
     Ok(member)
 }
 
+/// Legacy in-memory contribute — kept for unit tests of cycle advancement only.
+/// Production path is `initiate_contribution` (PSP checkout); settlement advances
+/// the cycle via webhook + DB.
+#[cfg(test)]
 pub fn contribute(store: &Store, group_id: Uuid, contributor_id: Uuid, transaction_pin: &str) -> Result<(), ApiError> {
+    use crate::services::wallet::{credit_wallet, debit_wallet};
+
     let group = store.ajo_groups.lock().unwrap()
         .get(&group_id).cloned()
         .ok_or(ApiError { error: "Group not found".into() })?;
@@ -79,20 +84,15 @@ pub fn contribute(store: &Store, group_id: Uuid, contributor_id: Uuid, transacti
     if group.status != AjoStatus::Active {
         return Err(ApiError { error: "Group is not active".into() });
     }
-
-    // O(1) membership check
     if !store.ajo_members.lock().unwrap().contains_key(&(group_id, contributor_id)) {
         return Err(ApiError { error: "Not a member of this group".into() });
     }
-
-    // O(1) duplicate contribution check
     if store.ajo_contributions.lock().unwrap()
         .contains(&(group_id, contributor_id, group.current_cycle))
     {
         return Err(ApiError { error: "Already contributed this cycle".into() });
     }
 
-    // Find receiver for this cycle — O(n) over members but n ≤ 50
     let receiver_id = store.ajo_members.lock().unwrap()
         .iter()
         .find(|((g, _), m)| *g == group_id && m.payout_position == group.current_cycle)
@@ -100,42 +100,18 @@ pub fn contribute(store: &Store, group_id: Uuid, contributor_id: Uuid, transacti
         .ok_or(ApiError { error: "No receiver for this cycle".into() })?;
 
     let reference = format!("ajo-{}-{}-{}", group_id, contributor_id, group.current_cycle);
-
     debit_wallet(store, contributor_id, group.contribution_kobo, &reference,
         &format!("Ajo contribution: {}", group.name), transaction_pin)?;
-
-    // Platform fee: 0.5% of contribution, deducted from payout (integer math only)
-    let fee_kobo    = group.contribution_kobo / 200; // 0.5% — integer division, no floats
+    let fee_kobo    = group.contribution_kobo / 200;
     let payout_kobo = group.contribution_kobo - fee_kobo;
-
     credit_wallet(store, receiver_id, payout_kobo, &reference,
         &format!("Ajo payout: {}", group.name));
 
     store.ajo_contributions.lock().unwrap()
         .insert((group_id, contributor_id, group.current_cycle));
 
-    // Notify receiver that a contribution arrived
-    let receiver_email = store.users.lock().unwrap()
-        .get(&receiver_id).and_then(|u| u.email.clone()).unwrap_or_default();
-    let receiver_name = store.users.lock().unwrap()
-        .get(&receiver_id).map(|u| u.name.clone()).unwrap_or_default();
-    let contributor_name = store.users.lock().unwrap()
-        .get(&contributor_id).map(|u| u.name.clone()).unwrap_or_else(|| "A member".into());
-
-    crate::services::wallet::stage_outbox_event(store, "ajo.contribution", serde_json::json!({
-        "user_id":           receiver_id,
-        "receiver_email":    receiver_email,
-        "receiver_name":     receiver_name,
-        "contributor_name":  contributor_name,
-        "amount_kobo":       payout_kobo,
-        "group_name":        group.name,
-        "cycle":             group.current_cycle,
-    }));
-
-    // Count contributions this cycle — advance if all members contributed
     let member_count = store.ajo_members.lock().unwrap()
         .keys().filter(|(g, _)| *g == group_id).count() as u32;
-
     let contributions_this_cycle = store.ajo_contributions.lock().unwrap()
         .iter().filter(|(g, _, c)| *g == group_id && *c == group.current_cycle).count() as u32;
 
@@ -150,8 +126,79 @@ pub fn contribute(store: &Store, group_id: Uuid, contributor_id: Uuid, transacti
             m.has_received = true;
         }
     }
-
     Ok(())
+}
+
+/// Start PSP checkout for this cycle's contribution. Share is marked only after webhook.
+pub async fn initiate_contribution(
+    store: &Store,
+    pool: &sqlx::PgPool,
+    group_id: Uuid,
+    contributor_id: Uuid,
+    transaction_pin: &str,
+    idempotency_key: &str,
+) -> Result<crate::services::payments::CheckoutSession, ApiError> {
+    use crate::db;
+    use crate::services::payments;
+
+    payments::require_pin(store, contributor_id, transaction_pin)?;
+
+    let group = store.ajo_groups.lock().unwrap()
+        .get(&group_id).cloned()
+        .ok_or(ApiError { error: "Group not found".into() })?;
+
+    if group.status != AjoStatus::Active {
+        return Err(ApiError { error: "Group is not active".into() });
+    }
+    if !store.ajo_members.lock().unwrap().contains_key(&(group_id, contributor_id)) {
+        return Err(ApiError { error: "Not a member of this group".into() });
+    }
+    if store.ajo_contributions.lock().unwrap()
+        .contains(&(group_id, contributor_id, group.current_cycle))
+    {
+        return Err(ApiError { error: "Already contributed this cycle".into() });
+    }
+
+    let receiver_id = store.ajo_members.lock().unwrap()
+        .iter()
+        .find(|((g, _), m)| *g == group_id && m.payout_position == group.current_cycle)
+        .map(|((_, u), _)| *u)
+        .ok_or(ApiError { error: "No receiver for this cycle".into() })?;
+
+    let (email, phone) = {
+        let users = store.users.lock().unwrap();
+        let u = users.get(&contributor_id).ok_or(ApiError { error: "User not found".into() })?;
+        (u.email.clone().unwrap_or_default(), Some(u.phone.clone()))
+    };
+    if email.is_empty() {
+        return Err(ApiError { error: "Email required for payment checkout".into() });
+    }
+
+    let obligation_id = db::insert_obligation(
+        pool,
+        "ajo",
+        contributor_id,
+        Some(receiver_id),
+        group.contribution_kobo,
+        None,
+        Some(group_id),
+        Some(group.current_cycle as i32),
+        None,
+        idempotency_key,
+    )
+    .await
+    .map_err(|_| ApiError { error: "Could not create contribution obligation".into() })?;
+
+    payments::init_checkout(
+        pool,
+        &email,
+        phone.as_deref(),
+        obligation_id,
+        group.contribution_kobo,
+        &format!("{idempotency_key}:attempt"),
+        "/ajo/verify",
+    )
+    .await
 }
 
 /// Closing a circle stops all future contributions and joins (both already

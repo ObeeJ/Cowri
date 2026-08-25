@@ -7,13 +7,14 @@ import { StatusPill } from '~/components/domain/status-pill'
 import { Button } from '~/components/ui/button'
 import { Dialog } from '~/components/ui/dialog'
 import { Field } from '~/components/ui/field'
+import { MoneyInput } from '~/components/ui/money-input'
 import { PinInput } from '~/components/ui/pin-input'
 import { Progress } from '~/components/ui/display'
 import { Skeleton, SkeletonGroup } from '~/components/ui/skeleton'
 import { ErrorState } from '~/components/ui/states'
 import { useToast } from '~/components/ui/toast'
 import { NoteIcon } from '~/components/icons'
-import { useBill, usePayBillShare, useWallet } from '~/lib/api/hooks'
+import { useBill, usePayBillShare } from '~/lib/api/hooks'
 import { useAuth } from '~/lib/auth'
 import { ApiError, errorMessage } from '~/lib/api/client'
 import { formatDateTime } from '~/lib/format'
@@ -27,7 +28,6 @@ function BillDetailPage() {
   const { billId } = useParams({ from: '/_app/bills/$billId' })
   const { user } = useAuth()
   const detail = useBill(billId)
-  const wallet = useWallet()
   const [confirming, setConfirming] = useState(false)
 
   if (detail.isPending) return <BillDetailSkeleton />
@@ -58,6 +58,8 @@ function BillDetailPage() {
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <StatusPill kind="bill" status={bill.status} />
             <span>Raised {formatDateTime(bill.created_at)}</span>
+            <span aria-hidden="true">·</span>
+            <span>Complete by {formatDateTime(bill.complete_by_at)}</span>
             {bill.creator_id === user?.id ? (
               <>
                 <span aria-hidden="true">·</span>
@@ -153,7 +155,9 @@ function BillDetailPage() {
           billId={billId}
           billTitle={bill.title}
           shareKobo={my_share.share_kobo}
-          availableKobo={wallet.data?.available_kobo}
+          remainingKobo={my_share.remaining_kobo ?? my_share.share_kobo - (my_share.amount_paid_kobo ?? 0)}
+          completeBy={bill.complete_by_at}
+          deadline={bill.deadline_at}
         />
       ) : null}
     </>
@@ -166,22 +170,25 @@ function PayShareDialog({
   billId,
   billTitle,
   shareKobo,
-  availableKobo,
+  remainingKobo,
+  completeBy,
+  deadline,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   billId: string
   billTitle: string
   shareKobo: number
-  availableKobo?: number
+  remainingKobo: number
+  completeBy: string
+  deadline: string
 }) {
   const { toast } = useToast()
   const pay = usePayBillShare()
   const [error, setError] = useState<string | null>(null)
   const [transactionPin, setTransactionPin] = useState('')
   const [pinError, setPinError] = useState(false)
-
-  const shortfall = availableKobo === undefined ? null : Math.max(shareKobo - availableKobo, 0)
+  const [amountKobo, setAmountKobo] = useState<number | null>(remainingKobo)
 
   async function handlePay() {
     setError(null)
@@ -190,19 +197,22 @@ function PayShareDialog({
       setPinError(true)
       return
     }
+    const bit = amountKobo ?? remainingKobo
+    if (bit <= 0 || bit > remainingKobo) {
+      setError(`Pay between ${formatKobo(100)} and the remaining ${formatKobo(remainingKobo)}.`)
+      return
+    }
     try {
-      await pay.mutateAsync({ id: billId, transactionPin })
+      await pay.mutateAsync({ id: billId, transactionPin, amountKobo: bit })
       onOpenChange(false)
       toast({
-        title: 'Share paid',
-        description: `${formatKobo(shareKobo)} went towards ${billTitle}.`,
+        title: 'Opening secure checkout',
+        description: `Pay ${formatKobo(bit)} for ${billTitle} via Paystack (card, transfer, USSD, or wallet).`,
         tone: 'success',
       })
     } catch (caught) {
       if (caught instanceof ApiError && caught.isConflict) {
         setError('This share has already been paid.')
-      } else if (caught instanceof ApiError && caught.isInsufficientFunds) {
-        setError('There is not enough in your wallet to cover this share.')
       } else if (caught instanceof ApiError && caught.status === 403) {
         setPinError(true)
         setTransactionPin('')
@@ -218,7 +228,7 @@ function PayShareDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Pay your share"
-      description={`${formatKobo(shareKobo)} will leave your wallet and go to whoever raised this bill.`}
+      description={`Pay in full or in bits. Must be complete by ${formatDateTime(completeBy)} (24h before ${formatDateTime(deadline)}). Money moves via Paystack — Cowri does not hold it.`}
       dismissable={!pay.isPending}
       footer={
         <>
@@ -229,10 +239,9 @@ function PayShareDialog({
             variant="primary"
             onClick={handlePay}
             loading={pay.isPending}
-            loadingText="Paying"
-            disabled={shortfall !== null && shortfall > 0}
+            loadingText="Opening checkout"
           >
-            Pay {formatKobo(shareKobo)}
+            Continue to Paystack
           </Button>
         </>
       }
@@ -244,39 +253,34 @@ function PayShareDialog({
             <MoneyAmount kobo={shareKobo} size="md" koboDigits="always" />
           </dd>
         </div>
-        {availableKobo !== undefined ? (
-          <div className="flex items-baseline justify-between gap-4 py-2.5">
-            <dt className="text-sm text-ink-muted">Balance afterwards</dt>
-            <dd>
-              <MoneyAmount
-                kobo={availableKobo - shareKobo}
-                size="md"
-                tone={availableKobo - shareKobo < 0 ? 'debit' : 'default'}
-              />
-            </dd>
-          </div>
-        ) : null}
+        <div className="flex items-baseline justify-between gap-4 py-2.5">
+          <dt className="text-sm text-ink-muted">Still owing</dt>
+          <dd>
+            <MoneyAmount kobo={remainingKobo} size="md" tone="debit" koboDigits="always" />
+          </dd>
+        </div>
       </dl>
+      <Field
+        className="mt-4"
+        label="Amount this time"
+        hint="Leave as the remaining balance, or pay a smaller bit toward it."
+      >
+        <MoneyInput valueKobo={amountKobo} onValueChange={setAmountKobo} />
+      </Field>
 
-      {shortfall !== null && shortfall > 0 ? (
-        <p className="mt-4 rounded-[var(--radius-panel)] border border-clay-rule bg-clay-tint px-3 py-2.5 text-sm text-clay">
-          You need {formatKobo(shortfall)} more in your wallet to pay this share.
-        </p>
-      ) : (
-        <Field label="Transaction PIN" className="mt-4" required>
-          <PinInput
-            label="Transaction PIN"
-            secret
-            value={transactionPin}
-            onValueChange={(next) => {
-              setTransactionPin(next)
-              setPinError(false)
-            }}
-            invalid={pinError}
-            onComplete={handlePay}
-          />
-        </Field>
-      )}
+      <Field label="Transaction PIN" className="mt-4" required>
+        <PinInput
+          label="Transaction PIN"
+          secret
+          value={transactionPin}
+          onValueChange={(next) => {
+            setTransactionPin(next)
+            setPinError(false)
+          }}
+          invalid={pinError}
+          onComplete={handlePay}
+        />
+      </Field>
 
       {error ? (
         <p

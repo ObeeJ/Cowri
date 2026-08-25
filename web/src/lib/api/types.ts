@@ -39,9 +39,9 @@ export type KycDetail = {
 export type Wallet = {
   id: Uuid
   user_id: Uuid
-  /** Settled balance. This is the only spendable figure. */
+  /** Display-only mirror of PSP-confirmed activity — not custodian cash. */
   available_kobo: number
-  /** Ledger balance, including holds that have not settled. */
+  /** Ledger mirror, including holds that have not settled. */
   ledger_kobo: number
   /** Optimistic lock version, incremented on every mutation. */
   version: number
@@ -112,12 +112,16 @@ export type Bill = {
   creator_id: Uuid
   total_kobo: number
   status: BillStatus
+  deadline_at: IsoDateTime
+  complete_by_at: IsoDateTime
+  timezone: string
   created_at: IsoDateTime
 }
 
 export type BillParticipantSummary = {
   user_id: Uuid
   share_kobo: number
+  amount_paid_kobo?: number
   paid: boolean
 }
 
@@ -125,7 +129,12 @@ export type BillDetail = {
   bill: Bill
   participants: BillParticipantSummary[]
   /** Null when the caller has no share on the bill. */
-  my_share: { share_kobo: number; paid: boolean } | null
+  my_share: {
+    share_kobo: number
+    amount_paid_kobo?: number
+    paid: boolean
+    remaining_kobo?: number
+  } | null
 }
 
 // ── Requests ────────────────────────────────────────────────────────────────
@@ -180,6 +189,37 @@ export type CreateBillRequest = {
   title: string
   total_kobo: number
   participant_phones: string[]
+  /** RFC 3339 — must be more than 24h from now. */
+  deadline_at: IsoDateTime
+}
+
+export type PayBillRequest = {
+  transaction_pin: string
+  amount_kobo?: number
+}
+
+export type CheckoutRequiredResponse = {
+  status: 'checkout_required'
+  authorization_url: string
+  reference: string
+  obligation_id: Uuid
+  amount_kobo: number
+}
+
+export type GiftBillRequest = {
+  for_user_id: Uuid
+  transaction_pin: string
+  amount_kobo?: number
+}
+
+export type P2pPaymentRequest = {
+  to_phone: string
+  amount_kobo: number
+  transaction_pin: string
+}
+
+export type SetInstallmentPlanRequest = {
+  installments: Array<{ amount_kobo: number; due_at: IsoDateTime }>
 }
 
 // ── Responses ───────────────────────────────────────────────────────────────

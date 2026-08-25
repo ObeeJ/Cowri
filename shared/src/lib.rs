@@ -159,12 +159,17 @@ pub struct AjoMember {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bill {
-    pub id:          Uuid,
-    pub title:       String,
-    pub creator_id:  Uuid,
-    pub total_kobo:  i64,
-    pub status:      BillStatus,
-    pub created_at:  DateTime<Utc>,
+    pub id:            Uuid,
+    pub title:         String,
+    pub creator_id:    Uuid,
+    pub total_kobo:    i64,
+    pub status:        BillStatus,
+    /// When the money is needed (event / due moment).
+    pub deadline_at:   DateTime<Utc>,
+    /// Hard gate: every share must be fully paid by this instant (`deadline_at - 24h`).
+    pub complete_by_at: DateTime<Utc>,
+    pub timezone:      String,
+    pub created_at:    DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -173,12 +178,20 @@ pub enum BillStatus { Pending, PartiallyPaid, Settled }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillParticipant {
-    pub id:          Uuid,
-    pub bill_id:     Uuid,
-    pub user_id:     Uuid,
-    pub share_kobo:  i64,
-    pub paid:        bool,
+    pub id:               Uuid,
+    pub bill_id:          Uuid,
+    pub user_id:          Uuid,
+    pub share_kobo:       i64,
+    /// Cumulative PSP-settled amount toward this share.
+    #[serde(default)]
+    pub amount_paid_kobo: i64,
+    /// Derived convenience: `amount_paid_kobo >= share_kobo`.
+    pub paid:             bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum PaymentMode { Manual, Auto }
 
 // ── API DTOs ──────────────────────────────────────────────────────────────────
 
@@ -316,6 +329,47 @@ pub struct CreateBillRequest {
     pub title:              String,
     pub total_kobo:         i64,
     pub participant_phones: Vec<String>,
+    /// Event / need-by time. Complete-by is enforced as 24h earlier.
+    pub deadline_at:        DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PayBillRequest {
+    pub transaction_pin: String,
+    /// Optional partial amount in kobo. Defaults to remaining share.
+    #[serde(default)]
+    pub amount_kobo:     Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InstallmentPlanItem {
+    pub amount_kobo: i64,
+    pub due_at:      DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetInstallmentPlanRequest {
+    pub installments: Vec<InstallmentPlanItem>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GiftBillRequest {
+    pub for_user_id:     Uuid,
+    pub transaction_pin: String,
+    #[serde(default)]
+    pub amount_kobo:     Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct P2pPaymentRequest {
+    pub to_phone:        String,
+    pub amount_kobo:     i64,
+    pub transaction_pin: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetPaymentModeRequest {
+    pub mode: PaymentMode,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

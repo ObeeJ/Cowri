@@ -1,3 +1,4 @@
+use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use shared::*;
 use uuid::Uuid;
@@ -13,10 +14,25 @@ fn validate_bvn_format(bvn: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
-/// One-way hash used only to detect a BVN already claimed by another
-/// account. Never reversible, never sent anywhere — the raw BVN is sent to
-/// Prembly over the request and kept nowhere in Cowri once that call returns.
-fn hash_bvn(bvn: &str) -> String {
+fn bvn_pepper() -> Vec<u8> {
+    std::env::var("BVN_HASH_PEPPER")
+        .or_else(|_| std::env::var("JWT_SECRET"))
+        .unwrap_or_default()
+        .into_bytes()
+}
+
+/// HMAC-SHA256 of the BVN with `BVN_HASH_PEPPER` (falls back to `JWT_SECRET`).
+/// Unsalted SHA-256 of an 11-digit identifier is brute-forceable.
+pub fn hash_bvn(bvn: &str) -> String {
+    let mut mac = Hmac::<Sha256>::new_from_slice(&bvn_pepper())
+        .expect("HMAC accepts any key size");
+    mac.update(bvn.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
+/// Pre-pepper hashes, kept only so duplicate detection still catches BVNs
+/// stored before the salt landed.
+pub fn hash_bvn_legacy(bvn: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bvn.as_bytes());
     format!("{:x}", hasher.finalize())
@@ -102,4 +118,17 @@ pub async fn bvn_already_claimed(pool: &sqlx::PgPool, bvn_hash: &str, user_id: U
     .fetch_one(pool)
     .await
     .unwrap_or(0) > 0
+}
+
+pub async fn bvn_already_claimed_any(
+    pool: &sqlx::PgPool,
+    hashes: &[&str],
+    user_id: Uuid,
+) -> bool {
+    for h in hashes {
+        if bvn_already_claimed(pool, h, user_id).await {
+            return true;
+        }
+    }
+    false
 }

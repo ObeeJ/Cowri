@@ -20,7 +20,7 @@ export const Route = createFileRoute('/_app/bills/new')({
   component: NewBillPage,
 })
 
-type FormErrors = Partial<Record<'title' | 'total' | 'participants' | 'form', string>>
+type FormErrors = Partial<Record<'title' | 'total' | 'participants' | 'deadline' | 'form', string>>
 
 function NewBillPage() {
   const navigate = useNavigate()
@@ -30,6 +30,8 @@ function NewBillPage() {
   const [title, setTitle] = useState('')
   const [totalKobo, setTotalKobo] = useState<number | null>(null)
   const [phones, setPhones] = useState<string[]>([''])
+  /** Local datetime-local value; converted to ISO on submit. Must be >24h out. */
+  const [deadlineLocal, setDeadlineLocal] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
 
   const validPhones = phones.map((phone) => phone.trim()).filter((phone) => isPlausiblePhone(phone))
@@ -58,6 +60,12 @@ function NewBillPage() {
     if (entered.length > MAX_PARTICIPANTS) {
       next.participants = `You can add up to ${MAX_PARTICIPANTS} other people.`
     }
+    const deadlineMs = deadlineLocal ? new Date(deadlineLocal).getTime() : NaN
+    if (!deadlineLocal || Number.isNaN(deadlineMs)) {
+      next.deadline = 'Pick when the money is needed.'
+    } else if (deadlineMs <= Date.now() + 24 * 60 * 60 * 1000) {
+      next.deadline = 'Deadline must be more than 24 hours from now (everyone must finish 24h early).'
+    }
     setErrors(next)
     if (Object.keys(next).length > 0) return
 
@@ -66,8 +74,13 @@ function NewBillPage() {
         title: trimmedTitle,
         total_kobo: totalKobo!,
         participant_phones: validPhones,
+        deadline_at: new Date(deadlineLocal).toISOString(),
       })
-      toast({ title: 'Bill created', description: 'Everyone can now settle their share.', tone: 'success' })
+      toast({
+        title: 'Bill created',
+        description: 'Everyone must finish paying 24 hours before the deadline.',
+        tone: 'success',
+      })
       await navigate({ to: '/bills/$billId', params: { billId: bill.id } })
     } catch (caught) {
       setErrors({ form: errorMessage(caught) })
@@ -92,6 +105,19 @@ function NewBillPage() {
               maxLength={200}
               placeholder="Dinner at Terra Kulture"
               autoFocus
+            />
+          </Field>
+
+          <Field
+            label="Deadline (when money is needed)"
+            error={errors.deadline}
+            required
+            hint="Everyone must finish paying 24 hours before this time."
+          >
+            <Input
+              type="datetime-local"
+              value={deadlineLocal}
+              onChange={(event) => setDeadlineLocal(event.target.value)}
             />
           </Field>
 

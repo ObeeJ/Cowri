@@ -1,5 +1,6 @@
 use crate::store::Store;
 use crate::services::{auth, ajo, bills, wallet, notifications};
+use chrono::{Duration, Utc};
 use shared::*;
 
 fn test_store() -> Store { Store::new() }
@@ -328,97 +329,56 @@ fn remove_member_rejects_someone_who_already_contributed_this_cycle() {
 // ── Bills ─────────────────────────────────────────────────────────────────────
 
 #[test]
-fn bill_creator_must_pay_own_share() {
+fn bill_creator_share_not_auto_paid_and_complete_by_is_24h_early() {
     let store = test_store();
     let creator = register_user(&store, "08022200001", "Creator");
-    let payer   = register_user(&store, "08022200002", "Payer");
-    wallet::credit_wallet(&store, creator, 50_000, "r1", "fund");
-    wallet::credit_wallet(&store, payer,   50_000, "r2", "fund");
+    let _payer  = register_user(&store, "08022200002", "Payer");
 
+    let deadline = Utc::now() + Duration::days(5);
     let bill = bills::create_bill(&store, creator, CreateBillRequest {
         title: "Dinner".into(), total_kobo: 20_000,
         participant_phones: vec!["08022200002".into()],
+        deadline_at: deadline,
     }).unwrap();
 
-    // Creator's share is NOT auto-paid
     let p = store.bill_participants.lock().unwrap()
         .get(&(bill.id, creator)).cloned().unwrap();
     assert!(!p.paid);
-
-    // Creator pays
-    bills::pay_bill_share(&store, bill.id, creator, TEST_TXN_PIN).unwrap();
-    let w = wallet::get_wallet(&store, creator).unwrap();
-    assert_eq!(w.available_kobo, 40_000); // 500 - 100
+    assert_eq!(p.amount_paid_kobo, 0);
+    assert_eq!(bill.complete_by_at, deadline - Duration::hours(24));
 }
 
 #[test]
-fn bill_settles_when_all_paid() {
+fn bill_deadline_must_be_more_than_24h_out() {
     let store = test_store();
-    let creator = register_user(&store, "08033300001", "C");
-    let p2      = register_user(&store, "08033300002", "P2");
-    wallet::credit_wallet(&store, creator, 50_000, "r1", "fund");
-    wallet::credit_wallet(&store, p2,      50_000, "r2", "fund");
-
-    let bill = bills::create_bill(&store, creator, CreateBillRequest {
-        title: "Lunch".into(), total_kobo: 20_000,
-        participant_phones: vec!["08033300002".into()],
-    }).unwrap();
-
-    bills::pay_bill_share(&store, bill.id, creator, TEST_TXN_PIN).unwrap();
-    bills::pay_bill_share(&store, bill.id, p2, TEST_TXN_PIN).unwrap();
-
-    let updated = store.bills.lock().unwrap().get(&bill.id).cloned().unwrap();
-    assert_eq!(updated.status, BillStatus::Settled);
-}
-
-#[test]
-fn failed_payment_does_not_mark_share_paid() {
-    let store = test_store();
-    let creator = register_user(&store, "08044400002", "E");
-    // Deliberately no funding — the debit must fail.
-
-    let bill = bills::create_bill(&store, creator, CreateBillRequest {
-        title: "Unfunded".into(), total_kobo: 10_000,
+    let creator = register_user(&store, "08022200009", "Creator");
+    let res = bills::create_bill(&store, creator, CreateBillRequest {
+        title: "Too soon".into(), total_kobo: 10_000,
         participant_phones: vec![],
-    }).unwrap();
-
-    // Insufficient balance — the share must stay unpaid so it can be retried.
-    let res = bills::pay_bill_share(&store, bill.id, creator, TEST_TXN_PIN);
-    assert!(res.unwrap_err().error.contains("Insufficient"));
-    let p = store.bill_participants.lock().unwrap()
-        .get(&(bill.id, creator)).cloned().unwrap();
-    assert!(!p.paid, "a failed debit must not leave the share marked paid");
-
-    // Wrong transaction PIN — same requirement.
-    wallet::credit_wallet(&store, creator, 50_000, "r1", "fund");
-    let res = bills::pay_bill_share(&store, bill.id, creator, "0000");
-    assert!(res.unwrap_err().error.contains("transaction PIN"));
-    let p = store.bill_participants.lock().unwrap()
-        .get(&(bill.id, creator)).cloned().unwrap();
-    assert!(!p.paid, "a rejected PIN must not leave the share marked paid");
-
-    // Now the real payment succeeds.
-    bills::pay_bill_share(&store, bill.id, creator, TEST_TXN_PIN).unwrap();
-    let p = store.bill_participants.lock().unwrap()
-        .get(&(bill.id, creator)).cloned().unwrap();
-    assert!(p.paid);
-}
-
-#[test]
-fn double_pay_rejected() {
-    let store = test_store();
-    let creator = register_user(&store, "08044400001", "D");
-    wallet::credit_wallet(&store, creator, 50_000, "r", "fund");
-
-    let bill = bills::create_bill(&store, creator, CreateBillRequest {
-        title: "Solo".into(), total_kobo: 10_000,
-        participant_phones: vec![],
-    }).unwrap();
-
-    bills::pay_bill_share(&store, bill.id, creator, TEST_TXN_PIN).unwrap();
-    let res = bills::pay_bill_share(&store, bill.id, creator, TEST_TXN_PIN);
+        deadline_at: Utc::now() + Duration::hours(12),
+    });
     assert!(res.is_err());
-    assert!(res.unwrap_err().error.contains("Already paid"));
+}
+
+#[test]
+fn installment_plan_must_sum_to_share_and_finish_before_complete_by() {
+    let complete_by = Utc::now() + Duration::days(4);
+    let ok_plan = vec![
+        InstallmentPlanItem { amount_kobo: 350, due_at: Utc::now() + Duration::days(1) },
+        InstallmentPlanItem { amount_kobo: 350, due_at: Utc::now() + Duration::days(2) },
+        InstallmentPlanItem { amount_kobo: 300, due_at: Utc::now() + Duration::days(3) },
+    ];
+    assert!(bills::validate_installment_plan(1_000, complete_by, &ok_plan).is_ok());
+
+    let bad_sum = vec![
+        InstallmentPlanItem { amount_kobo: 500, due_at: Utc::now() + Duration::days(1) },
+    ];
+    assert!(bills::validate_installment_plan(1_000, complete_by, &bad_sum).unwrap_err().error.contains("sum"));
+
+    let too_late = vec![
+        InstallmentPlanItem { amount_kobo: 1_000, due_at: complete_by + Duration::hours(1) },
+    ];
+    assert!(bills::validate_installment_plan(1_000, complete_by, &too_late).unwrap_err().error.contains("complete-by"));
 }
 
 // ── Ledger Invariant ──────────────────────────────────────────────────────────

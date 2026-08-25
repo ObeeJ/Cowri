@@ -233,15 +233,15 @@ impl Store {
         }
 
         // ── Bills ─────────────────────────────────────────────────────────────
-        let bill_rows: Vec<(Uuid, String, Uuid, i64, String, DateTime<Utc>)> =
+        let bill_rows: Vec<(Uuid, String, Uuid, i64, String, DateTime<Utc>, DateTime<Utc>, String, DateTime<Utc>)> =
             sqlx::query_as(
-                "SELECT id, title, creator_id, total_kobo, status, created_at FROM bills"
+                "SELECT id, title, creator_id, total_kobo, status, deadline_at, complete_by_at, timezone, created_at FROM bills"
             )
             .fetch_all(pool).await?;
 
         {
             let mut bills = store.bills.lock().unwrap();
-            for (id, title, creator_id, total_kobo, status, created_at) in bill_rows {
+            for (id, title, creator_id, total_kobo, status, deadline_at, complete_by_at, timezone, created_at) in bill_rows {
                 bills.insert(id, Bill {
                     id, title, creator_id, total_kobo,
                     status: match status.as_str() {
@@ -249,25 +249,28 @@ impl Store {
                         "partially_paid" => BillStatus::PartiallyPaid,
                         _                => BillStatus::Pending,
                     },
+                    deadline_at,
+                    complete_by_at,
+                    timezone,
                     created_at,
                 });
             }
         }
 
         // ── Bill participants ─────────────────────────────────────────────────
-        let part_rows: Vec<(Uuid, Uuid, i64, bool)> =
+        let part_rows: Vec<(Uuid, Uuid, i64, i64, bool)> =
             sqlx::query_as(
-                "SELECT bill_id, user_id, share_kobo, paid FROM bill_participants ORDER BY bill_id"
+                "SELECT bill_id, user_id, share_kobo, amount_paid_kobo, paid FROM bill_participants ORDER BY bill_id"
             )
             .fetch_all(pool).await?;
 
         {
             let mut parts = store.bill_participants.lock().unwrap();
             let mut index = store.bill_participant_index.lock().unwrap();
-            for (bill_id, user_id, share_kobo, paid) in part_rows {
+            for (bill_id, user_id, share_kobo, amount_paid_kobo, paid) in part_rows {
                 parts.insert((bill_id, user_id), BillParticipant {
                     id: Uuid::new_v4(),
-                    bill_id, user_id, share_kobo, paid,
+                    bill_id, user_id, share_kobo, amount_paid_kobo, paid,
                 });
                 index.entry(bill_id).or_default().push(user_id);
             }

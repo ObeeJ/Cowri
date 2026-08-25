@@ -24,6 +24,7 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppAdminRouteImport } from './routes/_app/admin'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppSendRouteImport } from './routes/_app/send'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppWalletRouteImport } from './routes/_app/wallet'
 import { Route as AppAdminIndexRouteImport } from './routes/_app/admin/index'
@@ -113,6 +114,11 @@ const AppDashboardRoute = AppDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSendRoute = AppSendRouteImport.update({
+  id: '/send',
+  path: '/send',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -199,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/verify-email': typeof VerifyEmailRoute
   '/admin': typeof AppAdminRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
+  '/send': typeof AppSendRoute
   '/settings': typeof AppSettingsRoute
   '/wallet': typeof AppWalletRoute
   '/admin/ajo': typeof AppAdminAjoRoute
@@ -228,6 +235,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/verify-email': typeof VerifyEmailRoute
   '/dashboard': typeof AppDashboardRoute
+  '/send': typeof AppSendRoute
   '/settings': typeof AppSettingsRoute
   '/wallet': typeof AppWalletRoute
   '/admin/ajo': typeof AppAdminAjoRoute
@@ -260,6 +268,7 @@ export interface FileRoutesById {
   '/verify-email': typeof VerifyEmailRoute
   '/_app/admin': typeof AppAdminRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/send': typeof AppSendRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/wallet': typeof AppWalletRoute
   '/_app/admin/ajo': typeof AppAdminAjoRoute
@@ -292,6 +301,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/admin'
     | '/dashboard'
+    | '/send'
     | '/settings'
     | '/wallet'
     | '/admin/ajo'
@@ -321,6 +331,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/verify-email'
     | '/dashboard'
+    | '/send'
     | '/settings'
     | '/wallet'
     | '/admin/ajo'
@@ -352,6 +363,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/_app/admin'
     | '/_app/dashboard'
+    | '/_app/send'
     | '/_app/settings'
     | '/_app/wallet'
     | '/_app/admin/ajo'
@@ -491,6 +503,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/send': {
+      id: '/_app/send'
+      path: '/send'
+      fullPath: '/send'
+      preLoaderRoute: typeof AppSendRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/settings': {
       id: '/_app/settings'
       path: '/settings'
@@ -615,6 +634,7 @@ const AppAdminRouteWithChildren = AppAdminRoute._addFileChildren(
 interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
+  AppSendRoute: typeof AppSendRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppWalletRoute: typeof AppWalletRoute
   AppAjoGroupIdRoute: typeof AppAjoGroupIdRoute
@@ -629,6 +649,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAdminRoute: AppAdminRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
+  AppSendRoute: AppSendRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppWalletRoute: AppWalletRoute,
   AppAjoGroupIdRoute: AppAjoGroupIdRoute,

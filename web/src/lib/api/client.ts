@@ -341,8 +341,12 @@ export const api = {
     join: (id: Uuid) => request<AjoMember>(`/ajo/${id}/join`, { method: 'POST' }),
 
     /** Re-checks the transaction PIN server-side before moving any money. */
-    contribute: (id: Uuid, body: TransactionPinRequest) =>
-      request<StatusResponse>(`/ajo/${id}/contribute`, { method: 'POST', body }),
+    contribute: (id: Uuid, body: TransactionPinRequest, idempotencyKey?: string) =>
+      request<import('./types').CheckoutRequiredResponse>(`/ajo/${id}/contribute`, {
+        method: 'POST',
+        body,
+        idempotencyKey,
+      }),
 
     /** Group admin only. Stops all future contributions and joins — does not
      * undo anything already paid out in past cycles. */
@@ -363,9 +367,32 @@ export const api = {
 
     get: (id: Uuid, signal?: AbortSignal) => request<BillDetail>(`/bills/${id}`, { signal }),
 
-    /** Re-checks the transaction PIN server-side before moving any money. */
-    pay: (id: Uuid, body: TransactionPinRequest) =>
-      request<StatusResponse>(`/bills/${id}/pay`, { method: 'POST', body }),
+    /** Opens PSP checkout; share settles only after webhook. */
+    pay: (id: Uuid, body: import('./types').PayBillRequest, idempotencyKey?: string) =>
+      request<import('./types').CheckoutRequiredResponse>(`/bills/${id}/pay`, {
+        method: 'POST',
+        body,
+        idempotencyKey,
+      }),
+
+    gift: (id: Uuid, body: import('./types').GiftBillRequest, idempotencyKey?: string) =>
+      request<import('./types').CheckoutRequiredResponse>(`/bills/${id}/gift`, {
+        method: 'POST',
+        body,
+        idempotencyKey,
+      }),
+
+    setInstallmentPlan: (id: Uuid, body: import('./types').SetInstallmentPlanRequest) =>
+      request<StatusResponse>(`/bills/${id}/installment-plan`, { method: 'POST', body }),
+  },
+
+  payments: {
+    p2p: (body: import('./types').P2pPaymentRequest, idempotencyKey?: string) =>
+      request<import('./types').CheckoutRequiredResponse>('/payments/p2p', {
+        method: 'POST',
+        body,
+        idempotencyKey,
+      }),
   },
 
   admin: {

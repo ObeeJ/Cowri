@@ -134,8 +134,11 @@ export function useContributeAjo() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, transactionPin }: { id: Uuid; transactionPin: string }) =>
-      api.ajo.contribute(id, { transaction_pin: transactionPin }),
-    onSuccess: (_data, { id }) => {
+      api.ajo.contribute(id, { transaction_pin: transactionPin }, newIdempotencyKey()),
+    onSuccess: (data, { id }) => {
+      if (data.authorization_url) {
+        window.location.assign(data.authorization_url)
+      }
       void queryClient.invalidateQueries({ queryKey: queryKeys.wallet })
       void queryClient.invalidateQueries({ queryKey: queryKeys.transactionsAll })
       void queryClient.invalidateQueries({ queryKey: queryKeys.ajoDetail(id) })
@@ -203,9 +206,24 @@ export function useCreateBill() {
 export function usePayBillShare() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, transactionPin }: { id: Uuid; transactionPin: string }) =>
-      api.bills.pay(id, { transaction_pin: transactionPin }),
-    onSuccess: (_data, { id }) => {
+    mutationFn: ({
+      id,
+      transactionPin,
+      amountKobo,
+    }: {
+      id: Uuid
+      transactionPin: string
+      amountKobo?: number
+    }) =>
+      api.bills.pay(
+        id,
+        { transaction_pin: transactionPin, amount_kobo: amountKobo },
+        newIdempotencyKey(),
+      ),
+    onSuccess: (data, { id }) => {
+      if (data.authorization_url) {
+        window.location.assign(data.authorization_url)
+      }
       void queryClient.invalidateQueries({ queryKey: queryKeys.wallet })
       void queryClient.invalidateQueries({ queryKey: queryKeys.transactionsAll })
       void queryClient.invalidateQueries({ queryKey: queryKeys.billDetail(id) })

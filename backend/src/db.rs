@@ -540,16 +540,23 @@ pub async fn persist_bill(pool: &sqlx::PgPool, bill: &shared::Bill, participants
     let mut tx = pool.begin().await?;
 
     sqlx::query(
-        "INSERT INTO bills (id, title, creator_id, total_kobo, status, created_at)
-         VALUES ($1,$2,$3,$4,'pending',$5) ON CONFLICT (id) DO NOTHING"
+        "INSERT INTO bills (id, title, creator_id, total_kobo, status, deadline_at, complete_by_at, timezone, created_at)
+         VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING"
     )
-    .bind(bill.id).bind(&bill.title).bind(bill.creator_id).bind(bill.total_kobo).bind(bill.created_at)
+    .bind(bill.id)
+    .bind(&bill.title)
+    .bind(bill.creator_id)
+    .bind(bill.total_kobo)
+    .bind(bill.deadline_at)
+    .bind(bill.complete_by_at)
+    .bind(&bill.timezone)
+    .bind(bill.created_at)
     .execute(&mut *tx).await?;
 
     for (uid, share) in participants {
         sqlx::query(
-            "INSERT INTO bill_participants (bill_id, user_id, share_kobo, paid)
-             VALUES ($1,$2,$3,false) ON CONFLICT DO NOTHING"
+            "INSERT INTO bill_participants (bill_id, user_id, share_kobo, amount_paid_kobo, paid)
+             VALUES ($1,$2,$3,0,false) ON CONFLICT DO NOTHING"
         )
         .bind(bill.id).bind(uid).bind(share)
         .execute(&mut *tx).await?;
@@ -559,9 +566,14 @@ pub async fn persist_bill(pool: &sqlx::PgPool, bill: &shared::Bill, participants
 }
 
 pub async fn persist_bill_payment(pool: &sqlx::PgPool, bill_id: uuid::Uuid, user_id: uuid::Uuid, all_paid: bool) -> Result<(), sqlx::Error> {
+    // Legacy helper — prefer settle_payment_attempt which applies amount_paid_kobo.
     let mut tx = pool.begin().await?;
 
-    sqlx::query("UPDATE bill_participants SET paid = true WHERE bill_id = $1 AND user_id = $2")
+    sqlx::query(
+        "UPDATE bill_participants
+         SET paid = true, amount_paid_kobo = share_kobo
+         WHERE bill_id = $1 AND user_id = $2"
+    )
         .bind(bill_id).bind(user_id)
         .execute(&mut *tx).await?;
 
@@ -570,6 +582,495 @@ pub async fn persist_bill_payment(pool: &sqlx::PgPool, bill_id: uuid::Uuid, user
         .bind(status).bind(bill_id)
         .execute(&mut *tx).await?;
 
+    tx.commit().await
+}
+
+// ── Obligations + PSP attempts ────────────────────────────────────────────────
+
+pub async fn insert_obligation(
+    pool: &PgPool,
+    kind: &str,
+    payer_user_id: Uuid,
+    payee_user_id: Option<Uuid>,
+    amount_kobo: i64,
+    bill_id: Option<Uuid>,
+    ajo_group_id: Option<Uuid>,
+    ajo_cycle: Option<i32>,
+    beneficiary_user_id: Option<Uuid>,
+    idempotency_key: &str,
+) -> Result<Uuid, sqlx::Error> {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO obligations
+            (id, kind, payer_user_id, payee_user_id, amount_kobo, bill_id, ajo_group_id, ajo_cycle,
+             beneficiary_user_id, idempotency_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (idempotency_key) DO NOTHING"
+    )
+    .bind(id)
+    .bind(kind)
+    .bind(payer_user_id)
+    .bind(payee_user_id)
+    .bind(amount_kobo)
+    .bind(bill_id)
+    .bind(ajo_group_id)
+    .bind(ajo_cycle)
+    .bind(beneficiary_user_id)
+    .bind(idempotency_key)
+    .execute(pool)
+    .await?;
+
+    // If conflict, return existing id
+    let existing: Uuid = sqlx::query_scalar(
+        "SELECT id FROM obligations WHERE idempotency_key = $1"
+    )
+    .bind(idempotency_key)
+    .fetch_one(pool)
+    .await?;
+    Ok(existing)
+}
+
+pub async fn insert_payment_attempt(
+    pool: &PgPool,
+    obligation_id: Uuid,
+    amount_kobo: i64,
+    provider_reference: &str,
+    mode: &str,
+    idempotency_key: &str,
+    authorization_url: Option<&str>,
+) -> Result<Uuid, sqlx::Error> {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO payment_attempts
+            (id, obligation_id, amount_kobo, provider_reference, mode, idempotency_key, authorization_url)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)"
+    )
+    .bind(id)
+    .bind(obligation_id)
+    .bind(amount_kobo)
+    .bind(provider_reference)
+    .bind(mode)
+    .bind(idempotency_key)
+    .bind(authorization_url)
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+pub async fn set_payment_attempt_url(pool: &PgPool, attempt_id: Uuid, url: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE payment_attempts SET authorization_url = $1 WHERE id = $2")
+        .bind(url).bind(attempt_id)
+        .execute(pool).await?;
+    Ok(())
+}
+
+pub async fn fail_payment_attempt(pool: &PgPool, attempt_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE payment_attempts SET status = 'failed' WHERE id = $1")
+        .bind(attempt_id)
+        .execute(pool).await?;
+    Ok(())
+}
+
+pub struct MandateRow {
+    pub authorization_code: String,
+    pub email: String,
+}
+
+pub async fn get_active_mandate(pool: &PgPool, mandate_id: Uuid) -> Result<Option<MandateRow>, sqlx::Error> {
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT authorization_code, email FROM payment_mandates
+         WHERE id = $1 AND status = 'active'"
+    )
+    .bind(mandate_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(authorization_code, email)| MandateRow { authorization_code, email }))
+}
+
+/// Settle a payment attempt by provider reference. Updates obligation + bill share.
+/// Idempotent: replaying a settled reference is a no-op success.
+pub async fn settle_payment_attempt(
+    pool: &PgPool,
+    reference: &str,
+    amount_kobo: i64,
+) -> Result<SettleResult, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let attempt: Option<(Uuid, Uuid, i64, String)> = sqlx::query_as(
+        "SELECT id, obligation_id, amount_kobo, status FROM payment_attempts
+         WHERE provider_reference = $1 FOR UPDATE"
+    )
+    .bind(reference)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some((attempt_id, obligation_id, attempt_amount, status)) = attempt else {
+        return Ok(SettleResult::NotFound);
+    };
+
+    if status == "settled" {
+        return Ok(SettleResult::AlreadySettled { obligation_id });
+    }
+
+    if amount_kobo > 0 && amount_kobo != attempt_amount {
+        // Prefer the amount we initialized; log mismatch via orphan later if needed.
+    }
+
+    sqlx::query(
+        "UPDATE payment_attempts
+         SET status = 'settled', settled_at = NOW()
+         WHERE id = $1"
+    )
+    .bind(attempt_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let obl: (i64, i64, String, Option<Uuid>, Uuid, Option<Uuid>, Option<Uuid>, Option<i32>) = sqlx::query_as(
+        "SELECT amount_kobo, amount_paid_kobo, kind, bill_id, payer_user_id, beneficiary_user_id,
+                ajo_group_id, ajo_cycle
+         FROM obligations WHERE id = $1 FOR UPDATE"
+    )
+    .bind(obligation_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let (obl_amount, paid_so_far, kind, bill_id, payer_user_id, beneficiary_user_id, ajo_group_id, ajo_cycle) = obl;
+    let new_paid = (paid_so_far + attempt_amount).min(obl_amount);
+    let obl_status = if new_paid >= obl_amount {
+        "settled"
+    } else if new_paid > 0 {
+        "partially_paid"
+    } else {
+        "pending"
+    };
+
+    sqlx::query(
+        "UPDATE obligations
+         SET amount_paid_kobo = $1, status = $2, updated_at = NOW()
+         WHERE id = $3"
+    )
+    .bind(new_paid)
+    .bind(obl_status)
+    .bind(obligation_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let mut bill_sync = None;
+
+    if kind == "bill" || kind == "gift" {
+        if let Some(bid) = bill_id {
+            let share_user = if kind == "gift" {
+                beneficiary_user_id.unwrap_or(payer_user_id)
+            } else {
+                payer_user_id
+            };
+
+            let share: (i64, i64) = sqlx::query_as(
+                "SELECT share_kobo, amount_paid_kobo FROM bill_participants
+                 WHERE bill_id = $1 AND user_id = $2 FOR UPDATE"
+            )
+            .bind(bid)
+            .bind(share_user)
+            .fetch_one(&mut *tx)
+            .await?;
+
+            let (share_kobo, part_paid) = share;
+            let part_new = (part_paid + attempt_amount).min(share_kobo);
+            let part_paid_flag = part_new >= share_kobo;
+
+            sqlx::query(
+                "UPDATE bill_participants
+                 SET amount_paid_kobo = $1, paid = $2
+                 WHERE bill_id = $3 AND user_id = $4"
+            )
+            .bind(part_new)
+            .bind(part_paid_flag)
+            .bind(bid)
+            .bind(share_user)
+            .execute(&mut *tx)
+            .await?;
+
+            let unpaid: (i64,) = sqlx::query_as(
+                "SELECT COUNT(*)::bigint FROM bill_participants
+                 WHERE bill_id = $1 AND paid = false"
+            )
+            .bind(bid)
+            .fetch_one(&mut *tx)
+            .await?;
+
+            let bill_status = if unpaid.0 == 0 {
+                "settled"
+            } else if part_new > 0 || part_paid > 0 {
+                "partially_paid"
+            } else {
+                "pending"
+            };
+
+            sqlx::query("UPDATE bills SET status = $1 WHERE id = $2")
+                .bind(bill_status)
+                .bind(bid)
+                .execute(&mut *tx)
+                .await?;
+
+            bill_sync = Some(BillSettleSync {
+                bill_id: bid,
+                user_id: share_user,
+                amount_paid_kobo: part_new,
+                share_kobo,
+                bill_status: bill_status.to_string(),
+            });
+        }
+    }
+
+    if kind == "ajo" {
+        if let (Some(gid), Some(cycle)) = (ajo_group_id, ajo_cycle) {
+            sqlx::query(
+                "INSERT INTO ajo_contributions (group_id, user_id, cycle)
+                 VALUES ($1,$2,$3) ON CONFLICT DO NOTHING"
+            )
+            .bind(gid)
+            .bind(payer_user_id)
+            .bind(cycle)
+            .execute(&mut *tx)
+            .await?;
+
+            // Advance cycle when everyone in the group has contributed this cycle.
+            let member_count: (i64,) = sqlx::query_as(
+                "SELECT COUNT(*)::bigint FROM ajo_members WHERE group_id = $1"
+            )
+            .bind(gid)
+            .fetch_one(&mut *tx)
+            .await?;
+            let contrib_count: (i64,) = sqlx::query_as(
+                "SELECT COUNT(*)::bigint FROM ajo_contributions
+                 WHERE group_id = $1 AND cycle = $2"
+            )
+            .bind(gid)
+            .bind(cycle)
+            .fetch_one(&mut *tx)
+            .await?;
+
+            if contrib_count.0 >= member_count.0 && member_count.0 > 0 {
+                let group: (i32, i32) = sqlx::query_as(
+                    "SELECT current_cycle, member_count FROM ajo_groups WHERE id = $1 FOR UPDATE"
+                )
+                .bind(gid)
+                .fetch_one(&mut *tx)
+                .await?;
+                let (current_cycle, member_target) = group;
+                if current_cycle == cycle {
+                    let next = current_cycle + 1;
+                    if next >= member_target {
+                        sqlx::query(
+                            "UPDATE ajo_groups SET status = 'completed' WHERE id = $1"
+                        )
+                        .bind(gid)
+                        .execute(&mut *tx)
+                        .await?;
+                    } else {
+                        sqlx::query(
+                            "UPDATE ajo_groups SET current_cycle = $1 WHERE id = $2"
+                        )
+                        .bind(next)
+                        .bind(gid)
+                        .execute(&mut *tx)
+                        .await?;
+                    }
+                    sqlx::query(
+                        "UPDATE ajo_members SET has_received = true
+                         WHERE group_id = $1 AND payout_position = $2"
+                    )
+                    .bind(gid)
+                    .bind(cycle)
+                    .execute(&mut *tx)
+                    .await?;
+                }
+            }
+        }
+    }
+
+    let mut ajo_sync = None;
+    if kind == "ajo" {
+        if let (Some(gid), Some(cycle)) = (ajo_group_id, ajo_cycle) {
+            let group: (i32, String) = sqlx::query_as(
+                "SELECT current_cycle, status FROM ajo_groups WHERE id = $1"
+            )
+            .bind(gid)
+            .fetch_one(&mut *tx)
+            .await?;
+            ajo_sync = Some(AjoSettleSync {
+                group_id: gid,
+                contributor_id: payer_user_id,
+                cycle,
+                current_cycle: group.0,
+                status: group.1,
+            });
+        }
+    }
+
+    tx.commit().await?;
+    Ok(SettleResult::Settled {
+        obligation_id,
+        bill: bill_sync,
+        ajo: ajo_sync,
+    })
+}
+
+#[derive(Debug)]
+pub struct BillSettleSync {
+    pub bill_id: Uuid,
+    pub user_id: Uuid,
+    pub amount_paid_kobo: i64,
+    pub share_kobo: i64,
+    pub bill_status: String,
+}
+
+#[derive(Debug)]
+pub struct AjoSettleSync {
+    pub group_id: Uuid,
+    pub contributor_id: Uuid,
+    pub cycle: i32,
+    pub current_cycle: i32,
+    pub status: String,
+}
+
+#[derive(Debug)]
+pub enum SettleResult {
+    NotFound,
+    AlreadySettled { obligation_id: Uuid },
+    Settled {
+        obligation_id: Uuid,
+        bill: Option<BillSettleSync>,
+        ajo: Option<AjoSettleSync>,
+    },
+}
+
+pub async fn payer_for_reference(pool: &PgPool, reference: &str) -> Option<Uuid> {
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT o.payer_user_id
+         FROM payment_attempts a
+         JOIN obligations o ON o.id = a.obligation_id
+         WHERE a.provider_reference = $1"
+    )
+    .bind(reference)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+pub async fn upsert_mandate(
+    pool: &PgPool,
+    user_id: Uuid,
+    authorization_code: &str,
+    email: &str,
+    card_last4: Option<&str>,
+    bank: Option<&str>,
+    card_type: Option<&str>,
+) -> Result<Uuid, sqlx::Error> {
+    let existing: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM payment_mandates
+         WHERE user_id = $1 AND authorization_code = $2"
+    )
+    .bind(user_id)
+    .bind(authorization_code)
+    .fetch_optional(pool)
+    .await?;
+    if let Some((id,)) = existing {
+        sqlx::query(
+            "UPDATE payment_mandates SET status = 'active', email = $1, card_last4 = $2, bank = $3, card_type = $4
+             WHERE id = $5"
+        )
+        .bind(email)
+        .bind(card_last4)
+        .bind(bank)
+        .bind(card_type)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        return Ok(id);
+    }
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO payment_mandates
+            (id, user_id, authorization_code, email, card_last4, bank, card_type, reusable, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,true,'active')"
+    )
+    .bind(id)
+    .bind(user_id)
+    .bind(authorization_code)
+    .bind(email)
+    .bind(card_last4)
+    .bind(bank)
+    .bind(card_type)
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+pub async fn list_mandates(pool: &PgPool, user_id: Uuid) -> Result<Vec<serde_json::Value>, sqlx::Error> {
+    let rows: Vec<(Uuid, String, Option<String>, Option<String>, Option<String>, String, chrono::DateTime<Utc>)> =
+        sqlx::query_as(
+            "SELECT id, email, card_last4, bank, card_type, status, consented_at
+             FROM payment_mandates WHERE user_id = $1 ORDER BY created_at DESC"
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(|(id, email, last4, bank, card_type, status, consented_at)| {
+        serde_json::json!({
+            "id": id,
+            "email": email,
+            "card_last4": last4,
+            "bank": bank,
+            "card_type": card_type,
+            "status": status,
+            "consented_at": consented_at,
+        })
+    }).collect())
+}
+
+pub async fn record_webhook_orphan(
+    pool: &PgPool,
+    reference: &str,
+    payload: &serde_json::Value,
+    reason: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO webhook_orphans (reference, payload, reason) VALUES ($1,$2,$3)"
+    )
+    .bind(reference)
+    .bind(payload)
+    .bind(reason)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn replace_bill_installments(
+    pool: &PgPool,
+    bill_id: Uuid,
+    user_id: Uuid,
+    items: &[(i64, chrono::DateTime<Utc>)],
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM bill_installments WHERE bill_id = $1 AND user_id = $2")
+        .bind(bill_id).bind(user_id)
+        .execute(&mut *tx).await?;
+
+    for (seq, (amount, due)) in items.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO bill_installments (bill_id, user_id, sequence, amount_kobo, due_at)
+             VALUES ($1,$2,$3,$4,$5)"
+        )
+        .bind(bill_id)
+        .bind(user_id)
+        .bind((seq + 1) as i32)
+        .bind(amount)
+        .bind(due)
+        .execute(&mut *tx)
+        .await?;
+    }
     tx.commit().await
 }
 

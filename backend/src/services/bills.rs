@@ -1,9 +1,56 @@
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use shared::*;
+use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::db;
+use crate::services::payments::{self, CheckoutSession};
 use crate::store::Store;
-use crate::services::wallet::{credit_wallet, debit_wallet};
+
+/// Validate a payer-chosen installment plan against share + complete_by.
+pub fn validate_installment_plan(
+    share_kobo: i64,
+    complete_by_at: chrono::DateTime<Utc>,
+    items: &[InstallmentPlanItem],
+) -> Result<(), ApiError> {
+    if items.is_empty() {
+        return Err(ApiError { error: "Installment plan must have at least one payment".into() });
+    }
+    let mut sum = 0i64;
+    let mut last_due = items[0].due_at;
+    for (i, item) in items.iter().enumerate() {
+        if item.amount_kobo <= 0 {
+            return Err(ApiError {
+                error: format!("Installment {} amount must be positive", i + 1),
+            });
+        }
+        if item.due_at > complete_by_at {
+            return Err(ApiError {
+                error: format!(
+                    "Installment {} is due after the complete-by deadline (24h before the bill deadline)",
+                    i + 1
+                ),
+            });
+        }
+        if i > 0 && item.due_at < last_due {
+            return Err(ApiError {
+                error: "Installments must be in chronological order".into(),
+            });
+        }
+        last_due = item.due_at;
+        sum = sum.saturating_add(item.amount_kobo);
+    }
+    if sum != share_kobo {
+        return Err(ApiError {
+            error: format!(
+                "Installments sum to ₦{:.2} but your share is ₦{:.2}",
+                sum as f64 / 100.0,
+                share_kobo as f64 / 100.0
+            ),
+        });
+    }
+    Ok(())
+}
 
 pub fn create_bill(store: &Store, creator_id: Uuid, req: CreateBillRequest) -> Result<Bill, ApiError> {
     if req.title.trim().is_empty() || req.title.len() > 200 {
@@ -15,6 +62,14 @@ pub fn create_bill(store: &Store, creator_id: Uuid, req: CreateBillRequest) -> R
     if req.participant_phones.len() > 49 {
         return Err(ApiError { error: "Maximum 49 additional participants".into() });
     }
+
+    let now = Utc::now();
+    if req.deadline_at <= now + Duration::hours(24) {
+        return Err(ApiError {
+            error: "Deadline must be more than 24 hours from now so everyone can finish 24h early".into(),
+        });
+    }
+    let complete_by_at = req.deadline_at - Duration::hours(24);
 
     let mut participant_ids: Vec<Uuid> = {
         let phones = store.phone_index.lock().unwrap();
@@ -34,7 +89,10 @@ pub fn create_bill(store: &Store, creator_id: Uuid, req: CreateBillRequest) -> R
         creator_id,
         total_kobo: req.total_kobo,
         status: BillStatus::Pending,
-        created_at: Utc::now(),
+        deadline_at: req.deadline_at,
+        complete_by_at,
+        timezone: "Africa/Lagos".into(),
+        created_at: now,
     };
 
     store.bills.lock().unwrap().insert(bill.id, bill.clone());
@@ -44,12 +102,22 @@ pub fn create_bill(store: &Store, creator_id: Uuid, req: CreateBillRequest) -> R
 
     let mut ordered = vec![creator_id];
     participants.insert((bill.id, creator_id), BillParticipant {
-        id: Uuid::new_v4(), bill_id: bill.id, user_id: creator_id, share_kobo, paid: false,
+        id: Uuid::new_v4(),
+        bill_id: bill.id,
+        user_id: creator_id,
+        share_kobo,
+        amount_paid_kobo: 0,
+        paid: false,
     });
 
     for user_id in participant_ids {
         participants.insert((bill.id, user_id), BillParticipant {
-            id: Uuid::new_v4(), bill_id: bill.id, user_id, share_kobo, paid: false,
+            id: Uuid::new_v4(),
+            bill_id: bill.id,
+            user_id,
+            share_kobo,
+            amount_paid_kobo: 0,
+            paid: false,
         });
         ordered.push(user_id);
     }
@@ -58,74 +126,186 @@ pub fn create_bill(store: &Store, creator_id: Uuid, req: CreateBillRequest) -> R
     Ok(bill)
 }
 
-pub fn pay_bill_share(store: &Store, bill_id: Uuid, user_id: Uuid, transaction_pin: &str) -> Result<(), ApiError> {
-    let share_kobo = {
-        let mut participants = store.bill_participants.lock().unwrap();
-        let p = participants.get_mut(&(bill_id, user_id))
-            .ok_or(ApiError { error: "Not a participant".into() })?;
-        if p.paid { return Err(ApiError { error: "Already paid".into() }); }
-        p.paid = true;
-        p.share_kobo
-    };
+/// Start a PSP checkout for (part of) the caller's bill share.
+/// Does **not** mark the share paid — webhook settlement does.
+pub async fn initiate_bill_payment(
+    store: &Store,
+    pool: &PgPool,
+    bill_id: Uuid,
+    user_id: Uuid,
+    req: &PayBillRequest,
+    idempotency_key: &str,
+) -> Result<CheckoutSession, ApiError> {
+    payments::require_pin(store, user_id, &req.transaction_pin)?;
 
-    let reference = format!("bill-{}-{}", bill_id, user_id);
-    if let Err(e) = debit_wallet(store, user_id, share_kobo, &reference, "Bill split payment", transaction_pin) {
-        // The debit failed (insufficient funds, wrong transaction PIN) — undo the
-        // optimistic `paid = true` set above so the share is still payable. The
-        // set-then-rollback (rather than check-then-set-after) is deliberate: it's
-        // what keeps two concurrent calls for the same participant from both
-        // reading `paid == false` and both debiting the wallet.
-        if let Some(p) = store.bill_participants.lock().unwrap().get_mut(&(bill_id, user_id)) {
-            p.paid = false;
-        }
-        return Err(e);
-    }
-
-    let creator_id = store.bills.lock().unwrap().get(&bill_id)
-        .map(|b| b.creator_id)
+    let bill = store.bills.lock().unwrap().get(&bill_id).cloned()
         .ok_or(ApiError { error: "Bill not found".into() })?;
 
-    if user_id != creator_id {
-        credit_wallet(store, creator_id, share_kobo, &reference, "Bill split received");
+    let now = Utc::now();
+    if now > bill.complete_by_at {
+        return Err(ApiError {
+            error: "Complete-by deadline has passed (payments must finish 24h before the bill deadline)".into(),
+        });
     }
 
-    // O(n) over participants for this bill — n ≤ 50
-    let participant_ids = store.bill_participant_index.lock().unwrap()
-        .get(&bill_id).cloned().unwrap_or_default();
+    let participant = store.bill_participants.lock().unwrap()
+        .get(&(bill_id, user_id)).cloned()
+        .ok_or(ApiError { error: "Not a participant".into() })?;
 
-    let all_paid = {
-        let participants = store.bill_participants.lock().unwrap();
-        participant_ids.iter().all(|uid| {
-            participants.get(&(bill_id, *uid)).map(|p| p.paid).unwrap_or(false)
-        })
+    if participant.paid {
+        return Err(ApiError { error: "Already paid".into() });
+    }
+
+    let remaining = participant.share_kobo - participant.amount_paid_kobo;
+    if remaining <= 0 {
+        return Err(ApiError { error: "Already paid".into() });
+    }
+
+    let amount = req.amount_kobo.unwrap_or(remaining);
+    if amount <= 0 || amount > remaining {
+        return Err(ApiError {
+            error: format!("Amount must be between ₦0.01 and remaining ₦{:.2}", remaining as f64 / 100.0),
+        });
+    }
+
+    let (email, phone) = {
+        let users = store.users.lock().unwrap();
+        let u = users.get(&user_id).ok_or(ApiError { error: "User not found".into() })?;
+        (
+            u.email.clone().unwrap_or_default(),
+            Some(u.phone.clone()),
+        )
     };
-
-    if let Some(bill) = store.bills.lock().unwrap().get_mut(&bill_id) {
-        bill.status = if all_paid { BillStatus::Settled } else { BillStatus::PartiallyPaid };
+    if email.is_empty() {
+        return Err(ApiError { error: "Email required for payment checkout".into() });
     }
 
-    // Notify bill creator that someone paid (skip if payer IS creator)
-    if user_id != creator_id {
-        let creator_email = store.users.lock().unwrap()
-            .get(&creator_id).and_then(|u| u.email.clone()).unwrap_or_default();
-        let creator_name = store.users.lock().unwrap()
-            .get(&creator_id).map(|u| u.name.clone()).unwrap_or_default();
-        let payer_name = store.users.lock().unwrap()
-            .get(&user_id).map(|u| u.name.clone()).unwrap_or_else(|| "Someone".into());
-        let bill_title = store.bills.lock().unwrap()
-            .get(&bill_id).map(|b| b.title.clone()).unwrap_or_default();
+    let obligation_id = db::insert_obligation(
+        pool,
+        "bill",
+        user_id,
+        Some(bill.creator_id),
+        amount,
+        Some(bill_id),
+        None,
+        None,
+        None,
+        idempotency_key,
+    )
+    .await
+    .map_err(|_| ApiError { error: "Could not create payment obligation".into() })?;
 
-        crate::services::wallet::stage_outbox_event(store, "bill.paid", serde_json::json!({
-            "user_id":       creator_id,
-            "creator_email": creator_email,
-            "creator_name":  creator_name,
-            "payer_name":    payer_name,
-            "amount_kobo":   share_kobo,
-            "bill_title":    bill_title,
-        }));
-    }
+    let attempt_key = format!("{idempotency_key}:attempt");
+    payments::init_checkout(
+        pool,
+        &email,
+        phone.as_deref(),
+        obligation_id,
+        amount,
+        &attempt_key,
+        "/bills/verify",
+    )
+    .await
+}
 
+pub async fn set_installment_plan(
+    store: &Store,
+    pool: &PgPool,
+    bill_id: Uuid,
+    user_id: Uuid,
+    items: Vec<InstallmentPlanItem>,
+) -> Result<(), ApiError> {
+    let bill = store.bills.lock().unwrap().get(&bill_id).cloned()
+        .ok_or(ApiError { error: "Bill not found".into() })?;
+    let participant = store.bill_participants.lock().unwrap()
+        .get(&(bill_id, user_id)).cloned()
+        .ok_or(ApiError { error: "Not a participant".into() })?;
+
+    let remaining = participant.share_kobo - participant.amount_paid_kobo;
+    validate_installment_plan(remaining, bill.complete_by_at, &items)?;
+
+    let rows: Vec<(i64, chrono::DateTime<Utc>)> = items.iter()
+        .map(|i| (i.amount_kobo, i.due_at))
+        .collect();
+
+    db::replace_bill_installments(pool, bill_id, user_id, &rows)
+        .await
+        .map_err(|_| ApiError { error: "Could not save installment plan".into() })?;
     Ok(())
+}
+
+pub async fn initiate_gift_payment(
+    store: &Store,
+    pool: &PgPool,
+    bill_id: Uuid,
+    payer_id: Uuid,
+    req: &GiftBillRequest,
+    idempotency_key: &str,
+) -> Result<CheckoutSession, ApiError> {
+    payments::require_pin(store, payer_id, &req.transaction_pin)?;
+
+    let bill = store.bills.lock().unwrap().get(&bill_id).cloned()
+        .ok_or(ApiError { error: "Bill not found".into() })?;
+
+    // Gifter must be on the bill (social circle check).
+    if !store.bill_participants.lock().unwrap().contains_key(&(bill_id, payer_id)) {
+        return Err(ApiError { error: "Not a participant".into() });
+    }
+
+    let beneficiary = store.bill_participants.lock().unwrap()
+        .get(&(bill_id, req.for_user_id)).cloned()
+        .ok_or(ApiError { error: "Beneficiary is not on this bill".into() })?;
+
+    if beneficiary.paid {
+        return Err(ApiError { error: "That share is already paid".into() });
+    }
+
+    let remaining = beneficiary.share_kobo - beneficiary.amount_paid_kobo;
+    let amount = req.amount_kobo.unwrap_or(remaining);
+    if amount <= 0 || amount > remaining {
+        return Err(ApiError { error: "Invalid gift amount".into() });
+    }
+
+    if Utc::now() > bill.complete_by_at {
+        return Err(ApiError {
+            error: "Complete-by deadline has passed".into(),
+        });
+    }
+
+    let (email, phone) = {
+        let users = store.users.lock().unwrap();
+        let u = users.get(&payer_id).ok_or(ApiError { error: "User not found".into() })?;
+        (u.email.clone().unwrap_or_default(), Some(u.phone.clone()))
+    };
+    if email.is_empty() {
+        return Err(ApiError { error: "Email required for payment checkout".into() });
+    }
+
+    let obligation_id = db::insert_obligation(
+        pool,
+        "gift",
+        payer_id,
+        Some(bill.creator_id),
+        amount,
+        Some(bill_id),
+        None,
+        None,
+        Some(req.for_user_id),
+        idempotency_key,
+    )
+    .await
+    .map_err(|_| ApiError { error: "Could not create gift obligation".into() })?;
+
+    payments::init_checkout(
+        pool,
+        &email,
+        phone.as_deref(),
+        obligation_id,
+        amount,
+        &format!("{idempotency_key}:attempt"),
+        "/bills/verify",
+    )
+    .await
 }
 
 pub fn list_bills(store: &Store, user_id: Uuid, page: usize, per_page: usize) -> Vec<Bill> {
@@ -148,7 +328,6 @@ pub fn get_bill(store: &Store, bill_id: Uuid, user_id: Uuid) -> Result<serde_jso
     let bill = store.bills.lock().unwrap().get(&bill_id).cloned()
         .ok_or(ApiError { error: "Bill not found".into() })?;
 
-    // Only participants can view
     if !store.bill_participants.lock().unwrap().contains_key(&(bill_id, user_id)) {
         return Err(ApiError { error: "Not a participant".into() });
     }
@@ -162,6 +341,7 @@ pub fn get_bill(store: &Store, bill_id: Uuid, user_id: Uuid) -> Result<serde_jso
             ps.get(&(bill_id, *uid)).map(|p| serde_json::json!({
                 "user_id": uid,
                 "share_kobo": p.share_kobo,
+                "amount_paid_kobo": p.amount_paid_kobo,
                 "paid": p.paid,
             }))
         }).collect()
@@ -169,7 +349,12 @@ pub fn get_bill(store: &Store, bill_id: Uuid, user_id: Uuid) -> Result<serde_jso
 
     let my_share = store.bill_participants.lock().unwrap()
         .get(&(bill_id, user_id))
-        .map(|p| serde_json::json!({ "share_kobo": p.share_kobo, "paid": p.paid }));
+        .map(|p| serde_json::json!({
+            "share_kobo": p.share_kobo,
+            "amount_paid_kobo": p.amount_paid_kobo,
+            "paid": p.paid,
+            "remaining_kobo": (p.share_kobo - p.amount_paid_kobo).max(0),
+        }));
 
     Ok(serde_json::json!({
         "bill": bill,

@@ -57,6 +57,10 @@ async fn main() {
     let store = store::Store::load_from_db(&pool).await
         .expect("Failed to load store from DB");
 
+    // ── Schedule worker (Ajo auto-debit ticks) ─────────────────────────────────
+    tokio::spawn(services::schedules::schedule_worker(pool.clone(), store.clone()));
+    tracing::info!("Schedule worker started");
+
     let state = AppState { store, db: pool };
 
     // ── Web client (React, in web/) ───────────────────────────────────────────
@@ -96,10 +100,15 @@ async fn main() {
         .route("POST", "/v1/ajo/:id/members/:member_id/remove", routes::remove_ajo_member)
         .route("POST", "/v1/ajo/:id/join",         routes::join_ajo)
         .route("POST", "/v1/ajo/:id/contribute",   routes::contribute_ajo)
+        .route("POST", "/v1/ajo/:id/payment-mode", routes::set_ajo_payment_mode)
+        .route("POST", "/v1/payments/mandates",    routes::save_payment_mandate)
         .route("GET",  "/v1/bills",                routes::list_bills)
         .route("POST", "/v1/bills",                routes::create_bill)
         .route("GET",  "/v1/bills/:id",            routes::get_bill_detail)
         .route("POST", "/v1/bills/:id/pay",        routes::pay_bill)
+        .route("POST", "/v1/bills/:id/installment-plan", routes::set_bill_installment_plan)
+        .route("POST", "/v1/bills/:id/gift",       routes::gift_bill_share)
+        .route("POST", "/v1/payments/p2p",         routes::p2p_payment)
         .route("GET",  "/v1/health",               routes::health)
         .route("GET",  "/v1/ledger/check",         routes::ledger_check)
         // Admin

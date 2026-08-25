@@ -144,6 +144,20 @@ pub async fn set_user_role(req: Request) -> Response {
         _       => return err_resp(400, "Role must be 'user' or 'admin'"),
     };
 
+    let role_str = match new_role {
+        UserRole::Admin => "admin",
+        UserRole::User => "user",
+    };
+    if let Err(e) = sqlx::query("UPDATE users SET role = $1 WHERE id = $2")
+        .bind(role_str)
+        .bind(user_id)
+        .execute(&state.db)
+        .await
+    {
+        tracing::error!(error = %e, "persist user role failed");
+        return err_resp(500, "Could not update role");
+    }
+
     let mut users = state.store.users.lock().unwrap();
     match users.get_mut(&user_id) {
         Some(u) => { u.role = new_role; ok_resp(200, serde_json::json!({ "status": "updated" })) }

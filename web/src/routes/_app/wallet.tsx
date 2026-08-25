@@ -42,8 +42,8 @@ function WalletPage() {
   return (
     <>
       <PageHeader
-        title="Wallet"
-        description="Money you have added, contributed and received, in the order it happened."
+        title="Activity"
+        description="Display-only summary of Paystack-confirmed activity. Cowri does not hold your cash — payments go through the provider (card, transfer, USSD, or wallet)."
         actions={
           <>
             <Button
@@ -59,6 +59,9 @@ function WalletPage() {
             </Button>
             <Button variant="primary" leading={<NoteIcon size={16} />} onClick={() => setFundOpen(true)}>
               Add money
+            </Button>
+            <Button leading={<WalletIcon size={16} />} onClick={() => void (window.location.href = '/send')}>
+              Send money
             </Button>
           </>
         }
