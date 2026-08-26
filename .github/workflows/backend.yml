@@ -12,6 +12,8 @@ env:
   PAYSTACK_SECRET_KEY: "sk_test_placeholder"
   CORS_ORIGIN: "http://localhost:8080"
   APP_URL: "http://localhost:3000"
+  COWRI_PAYMENTS_MODE: "mock"
+  BVN_HASH_PEPPER: "ci-bvn-pepper-that-is-long-enough-32b"
 
 jobs:
   backend:
@@ -71,5 +73,8 @@ jobs:
       - name: Clippy
         run: cargo clippy -p backend --all-targets -- -D warnings
 
-      - name: Run tests
-        run: cargo test -p backend --verbose
+      - name: Run unit tests
+        run: cargo test -p backend --bin backend --verbose
+
+      - name: E2E smoke (mock PSP + real Postgres)
+        run: cargo test -p backend --test e2e_smoke -- --test-threads=1

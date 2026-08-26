@@ -356,6 +356,12 @@ export const api = {
      * already due or in progress. */
     removeMember: (groupId: Uuid, memberId: Uuid) =>
       request<StatusResponse>(`/ajo/${groupId}/members/${memberId}/remove`, { method: 'POST' }),
+
+    setPaymentMode: (id: Uuid, mode: import('./types').PaymentMode) =>
+      request<StatusResponse>(`/ajo/${id}/payment-mode`, {
+        method: 'POST',
+        body: { mode },
+      }),
   },
 
   bills: {
@@ -392,6 +398,12 @@ export const api = {
         method: 'POST',
         body,
         idempotencyKey,
+      }),
+
+    saveMandate: (body: import('./types').SaveMandateRequest) =>
+      request<import('./types').SaveMandateResponse>('/payments/mandates', {
+        method: 'POST',
+        body,
       }),
   },
 

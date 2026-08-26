@@ -618,10 +618,10 @@ async fn maybe_persist_paystack_mandate(
         return;
     }
     let Some(uid) = user_id else { return };
-    let email = body["data"]["customer"]["email"].as_str()
-        .or_else(|| {
-            state.store.users.lock().unwrap().get(&uid).and_then(|u| u.email.as_deref()).map(|s| s.to_string())
-        });
+    let user_email = state.store.users.lock().unwrap()
+        .get(&uid).and_then(|u| u.email.clone());
+    let email = body["data"]["customer"]["email"].as_str().map(|s| s.to_string())
+        .or(user_email);
     let email = match email {
         Some(ref e) if !e.is_empty() => e.clone(),
         Some(e) => e,

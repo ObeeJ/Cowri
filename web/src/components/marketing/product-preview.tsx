@@ -88,6 +88,9 @@ const SAMPLE_BILL: Bill = {
   creator_id: SAMPLE_WALLET.user_id,
   total_kobo: 750_000,
   status: 'partially_paid',
+  deadline_at: new Date(now + 2 * day).toISOString(),
+  complete_by_at: new Date(now + day).toISOString(),
+  timezone: 'Africa/Lagos',
   created_at: new Date(now - 3 * day).toISOString(),
 }
 

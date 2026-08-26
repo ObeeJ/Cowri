@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { PageHeader } from '~/components/domain/page-header'
 import { Button } from '~/components/ui/button'
-import { Field, Input } from '~/components/ui/field'
+import { Field } from '~/components/ui/field'
 import { MoneyInput } from '~/components/ui/money-input'
 import { PhoneInput, isPlausiblePhone } from '~/components/ui/phone-input'
 import { PinInput } from '~/components/ui/pin-input'
@@ -75,7 +75,7 @@ function SendMoneyPage() {
           <MoneyInput valueKobo={amountKobo} onValueChange={setAmountKobo} />
         </Field>
         <Field label="Transaction PIN" required>
-          <PinInput value={transactionPin} onValueChange={setTransactionPin} length={4} />
+          <PinInput label="Transaction PIN" value={transactionPin} onValueChange={setTransactionPin} length={4} />
         </Field>
         {error ? <p className="text-sm text-clay">{error}</p> : null}
         <Button type="submit" variant="primary" loading={loading} loadingText="Starting checkout">

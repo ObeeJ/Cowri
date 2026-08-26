@@ -218,6 +218,21 @@ export type P2pPaymentRequest = {
   transaction_pin: string
 }
 
+export type PaymentMode = 'manual' | 'auto'
+
+export type SaveMandateRequest = {
+  authorization_code: string
+  email: string
+  card_last4?: string
+  bank?: string
+  card_type?: string
+}
+
+export type SaveMandateResponse = {
+  status: string
+  mandate_id: Uuid
+}
+
 export type SetInstallmentPlanRequest = {
   installments: Array<{ amount_kobo: number; due_at: IsoDateTime }>
 }

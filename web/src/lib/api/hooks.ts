@@ -232,6 +232,66 @@ export function usePayBillShare() {
   })
 }
 
+export function useGiftBillShare() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      forUserId,
+      transactionPin,
+      amountKobo,
+    }: {
+      id: Uuid
+      forUserId: Uuid
+      transactionPin: string
+      amountKobo?: number
+    }) =>
+      api.bills.gift(
+        id,
+        { for_user_id: forUserId, transaction_pin: transactionPin, amount_kobo: amountKobo },
+        newIdempotencyKey(),
+      ),
+    onSuccess: (data, { id }) => {
+      if (data.authorization_url) {
+        window.location.assign(data.authorization_url)
+      }
+      void queryClient.invalidateQueries({ queryKey: queryKeys.billDetail(id) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.billListAll })
+    },
+  })
+}
+
+export function useSetInstallmentPlan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      installments,
+    }: {
+      id: Uuid
+      installments: Array<{ amount_kobo: number; due_at: string }>
+    }) => api.bills.setInstallmentPlan(id, { installments }),
+    onSuccess: (_data, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.billDetail(id) })
+    },
+  })
+}
+
+export function useSaveMandate() {
+  return useMutation({ mutationFn: api.payments.saveMandate })
+}
+
+export function useSetAjoPaymentMode() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, mode }: { id: Uuid; mode: import('./types').PaymentMode }) =>
+      api.ajo.setPaymentMode(id, mode),
+    onSuccess: (_data, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ajoDetail(id) })
+    },
+  })
+}
+
 // ── Auth flows ──────────────────────────────────────────────────────────────
 
 export function useRegister() {

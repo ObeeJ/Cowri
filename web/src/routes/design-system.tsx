@@ -101,6 +101,9 @@ const bill: Bill = {
   creator_id: 'u1',
   total_kobo: 750_000,
   status: 'partially_paid',
+  deadline_at: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+  complete_by_at: new Date(Date.now() + 86_400_000).toISOString(),
+  timezone: 'Africa/Lagos',
   created_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
 }
 
