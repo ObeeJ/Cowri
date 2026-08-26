@@ -725,8 +725,8 @@ pub async fn settle_payment_attempt(
     .execute(&mut *tx)
     .await?;
 
-    let obl: (i64, i64, String, Option<Uuid>, Uuid, Option<Uuid>, Option<Uuid>, Option<i32>) = sqlx::query_as(
-        "SELECT amount_kobo, amount_paid_kobo, kind, bill_id, payer_user_id, beneficiary_user_id,
+    let obl: (i64, i64, String, Option<Uuid>, Uuid, Option<Uuid>, Option<Uuid>, Option<Uuid>, Option<i32>) = sqlx::query_as(
+        "SELECT amount_kobo, amount_paid_kobo, kind, bill_id, payer_user_id, payee_user_id, beneficiary_user_id,
                 ajo_group_id, ajo_cycle
          FROM obligations WHERE id = $1 FOR UPDATE"
     )
@@ -734,7 +734,7 @@ pub async fn settle_payment_attempt(
     .fetch_one(&mut *tx)
     .await?;
 
-    let (obl_amount, paid_so_far, kind, bill_id, payer_user_id, beneficiary_user_id, ajo_group_id, ajo_cycle) = obl;
+    let (obl_amount, paid_so_far, kind, bill_id, payer_user_id, payee_user_id, beneficiary_user_id, ajo_group_id, ajo_cycle) = obl;
     let new_paid = (paid_so_far + attempt_amount).min(obl_amount);
     let obl_status = if new_paid >= obl_amount {
         "settled"
@@ -905,6 +905,110 @@ pub async fn settle_payment_attempt(
                 current_cycle: group.0,
                 status: group.1,
             });
+        }
+    }
+
+    // ── Persist wallet debit for payer (and credit for payee if internal) ──
+    // Wallet rows may not exist for every user (display-only mirror), so we
+    // use DO NOTHING rather than failing the whole settlement.
+    let payer_wallet: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM wallets WHERE user_id = $1"
+    )
+    .bind(payer_user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if let Some((payer_wallet_id,)) = payer_wallet {
+        sqlx::query(
+            "UPDATE wallets
+             SET available_kobo = available_kobo - $1,
+                 ledger_kobo    = ledger_kobo    - $1,
+                 version        = version + 1
+             WHERE id = $2 AND available_kobo >= $1"
+        )
+        .bind(attempt_amount)
+        .bind(payer_wallet_id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO ledger_entries
+                 (wallet_id, kind, amount_kobo, running_balance_kobo, reference, description, status)
+             SELECT $1, 'debit', $2,
+                    (SELECT available_kobo FROM wallets WHERE id = $1),
+                    $3, $4, 'settled'
+             ON CONFLICT (wallet_id, reference, kind) DO NOTHING"
+        )
+        .bind(payer_wallet_id)
+        .bind(attempt_amount)
+        .bind(reference)
+        .bind(format!("{kind} payment"))
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO transactions (wallet_id, kind, amount_kobo, reference, description, status)
+             VALUES ($1, 'debit', $2, $3, $4, 'success')
+             ON CONFLICT DO NOTHING"
+        )
+        .bind(payer_wallet_id)
+        .bind(attempt_amount)
+        .bind(reference)
+        .bind(format!("{kind} payment"))
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    // Credit the payee for p2p and ajo (bill creator collects externally via PSP).
+    if (kind == "p2p" || kind == "ajo") {
+        if let Some(payee_id) = payee_user_id {
+            let payee_wallet: Option<(Uuid,)> = sqlx::query_as(
+                "SELECT id FROM wallets WHERE user_id = $1"
+            )
+            .bind(payee_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+            if let Some((payee_wallet_id,)) = payee_wallet {
+                sqlx::query(
+                    "UPDATE wallets
+                     SET available_kobo = available_kobo + $1,
+                         ledger_kobo    = ledger_kobo    + $1,
+                         version        = version + 1
+                     WHERE id = $2"
+                )
+                .bind(attempt_amount)
+                .bind(payee_wallet_id)
+                .execute(&mut *tx)
+                .await?;
+
+                sqlx::query(
+                    "INSERT INTO ledger_entries
+                         (wallet_id, kind, amount_kobo, running_balance_kobo, reference, description, status)
+                     SELECT $1, 'credit', $2,
+                            (SELECT available_kobo FROM wallets WHERE id = $1),
+                            $3, $4, 'settled'
+                     ON CONFLICT (wallet_id, reference, kind) DO NOTHING"
+                )
+                .bind(payee_wallet_id)
+                .bind(attempt_amount)
+                .bind(reference)
+                .bind(format!("{kind} receipt"))
+                .execute(&mut *tx)
+                .await?;
+
+                sqlx::query(
+                    "INSERT INTO transactions (wallet_id, kind, amount_kobo, reference, description, status)
+                     VALUES ($1, 'credit', $2, $3, $4, 'success')
+                     ON CONFLICT DO NOTHING"
+                )
+                .bind(payee_wallet_id)
+                .bind(attempt_amount)
+                .bind(reference)
+                .bind(format!("{kind} receipt"))
+                .execute(&mut *tx)
+                .await?;
+            }
         }
     }
 
