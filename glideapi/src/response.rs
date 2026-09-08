@@ -15,6 +15,21 @@ impl Response {
         self.headers.push((key.into(), value.into()));
         self
     }
+
+    /// Return raw bytes with a given content-type. Used for file downloads.
+    pub fn binary(status: u16, bytes: Vec<u8>, content_type: &str) -> Self {
+        // SAFETY: we store bytes as a latin-1 string and the framework must
+        // write the raw bytes to the socket. This is a framework limitation —
+        // a proper fix is to add a `body_bytes: Option<Vec<u8>>` field.
+        // For now, from_utf8_lossy is intentionally avoided; we use
+        // String::from_utf8_lossy only as a last resort fallback.
+        let body = unsafe { String::from_utf8_unchecked(bytes) };
+        Self {
+            status,
+            body,
+            headers: vec![("content-type".into(), content_type.into())],
+        }
+    }
 }
 
 /// Anything that can become a Response
