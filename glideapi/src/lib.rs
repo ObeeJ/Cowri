@@ -308,10 +308,11 @@ fn json_resp(status: u16, body: String, req_id: Option<&str>, extra_headers: Vec
     b.body(Full::new(Bytes::from(body))).unwrap()
 }
 
-/// Apply CORS headers — only sets Allow-Origin if the request origin matches config
+/// Apply CORS headers — only sets Allow-Origin if the request origin matches config.
+/// `cors_origin` may be a comma-separated allow-list (Pages + local preview).
 fn apply_cors(mut resp: hyper::Response<Full<Bytes>>, origin: &str, cfg: &Config) -> hyper::Response<Full<Bytes>> {
     let allowed = match &cfg.cors_origin {
-        Some(o) if o == origin => origin,
+        Some(list) if list.split(',').map(str::trim).any(|o| o == origin) => origin,
         _ => return resp,
     };
     let headers = resp.headers_mut();

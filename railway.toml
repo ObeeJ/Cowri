@@ -1,4 +1,5 @@
-# Railway: single process serves API + built web client (see Dockerfile).
+# Railway: Docker image runs the Rust API (migrates Postgres on boot).
+# Point DATABASE_URL at Supabase (Session pooler, port 5432, sslmode=require).
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
@@ -7,3 +8,4 @@ dockerfilePath = "Dockerfile"
 healthcheckPath = "/v1/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
+# Railway injects PORT; backend/src/main.rs binds 0.0.0.0:$PORT.

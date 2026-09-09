@@ -70,7 +70,9 @@ async fn main() {
     // works before anyone has run `npm run build` in web/.
     let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "web/dist".into());
 
-    tracing::info!(" Cowri API on http://0.0.0.0:3000");
+    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".into());
+    let addr = format!("0.0.0.0:{port}");
+    tracing::info!(" Cowri API on http://{addr}");
 
     let mut app = App::new()
         .config(Config { cors_origin, ..Config::default() })
@@ -102,6 +104,8 @@ async fn main() {
         .route("POST", "/v1/ajo/:id/contribute",   routes::contribute_ajo)
         .route("POST", "/v1/ajo/:id/payment-mode", routes::set_ajo_payment_mode)
         .route("POST", "/v1/payments/mandates",    routes::save_payment_mandate)
+        .route("GET",  "/v1/payments/mandates",    routes::list_payment_mandates)
+        .route("POST", "/v1/payments/mandates/initialize", routes::initialize_mandate)
         .route("GET",  "/v1/bills",                routes::list_bills)
         .route("POST", "/v1/bills",                routes::create_bill)
         .route("GET",  "/v1/bills/:id",            routes::get_bill_detail)
@@ -129,5 +133,5 @@ async fn main() {
         );
     }
 
-    app.listen("0.0.0.0:3000").await;
+    app.listen(&addr).await;
 }

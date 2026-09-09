@@ -27,15 +27,8 @@
 
 ## Still blocking a true SHIP
 
-1. **No live Railway/staging URL** with real `DATABASE_URL` + Paystack webhook wired.
-2. **Mandate link UI / save authorization** after first successful charge — schema exists; user consent flow incomplete.
-3. **Ajo auto payment-mode API** to attach mandate + create `payment_schedules` row from product UI.
-4. **DB integration / restart E2E in CI** (`COWRI_PAYMENTS_MODE=mock` + Postgres) — unit tests still use in-memory Ajo contribute under `#[cfg(test)]`.
-5. **BVN hash salting** not yet applied.
-6. **In-memory Store** still hydrated for reads; money-out no longer trusts it as cash, but dual-write drift on ajo cycle after webhook until restart remains a risk (hydrate or sync store on settle).
-7. **Branch protection / production secrets** — human ops on GitHub + Railway.
-8. **Gift UI** on bill detail (API only so far).
-9. **Installment plan UI** (API + validator only).
+1. **You** plug secrets and custom domains (see `docs/DEPLOY.md`): Railway + Supabase `DATABASE_URL`, Cloudflare Pages, R2, Worker gateway, Paystack webhook URL. The repo is wired for that; live URLs are operator work.
+2. GitHub branch protection / production environment secrets — human ops.
 
 ## How to run locally (mock PSP)
 

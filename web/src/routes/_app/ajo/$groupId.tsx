@@ -579,7 +579,7 @@ function AutoDebitDialog({
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 400 && caught.message.includes('mandate')) {
         setError(
-          'You need a saved card before enabling auto-debit. Complete a manual contribution first — your card will be saved automatically after the first successful Paystack charge.',
+          'Link a card in Settings (₦100 Paystack checkout) before enabling auto-debit.',
         )
       } else {
         setError(errorMessage(caught))

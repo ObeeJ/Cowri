@@ -458,6 +458,89 @@ async fn bvn_format_is_rejected_before_any_network_call() {
     }
 }
 
+#[test]
+fn bvn_hash_is_peppered_not_plain_sha256() {
+    std::env::set_var("JWT_SECRET", "test-secret-that-is-long-enough-32b");
+    std::env::set_var("BVN_HASH_PEPPER", "unit-test-pepper");
+    let bvn = "22112345678";
+    let salted = crate::services::kyc::hash_bvn(bvn);
+    let legacy = crate::services::kyc::hash_bvn_legacy(bvn);
+    assert_ne!(salted, legacy);
+    assert_eq!(salted.len(), 64);
+}
+
+/// Requires DATABASE_URL (set in CI). Skips locally when Postgres is absent.
+#[tokio::test]
+async fn bill_share_stays_paid_after_store_reload() {
+    let Ok(url) = std::env::var("DATABASE_URL") else { return };
+    std::env::set_var("COWRI_PAYMENTS_MODE", "mock");
+    std::env::set_var("JWT_SECRET", "test-secret-that-is-long-enough-32b");
+    std::env::set_var("PAYSTACK_SECRET_KEY", "sk_test_ci");
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&url)
+        .await
+        .expect("connect");
+    crate::db::run_migrations(&pool).await.expect("migrate");
+
+    let store = crate::store::Store::new();
+    let n = (uuid::Uuid::new_v4().as_u128() % 10_000_000) as u32;
+    let phone_c = format!("0801{n:07}");
+    let phone_p = format!("0802{n:07}");
+    let creator = register_user(&store, &phone_c, "CreatorE2E");
+    let _payer = register_user(&store, &phone_p, "PayerE2E");
+
+    let creator_user = store.users.lock().unwrap().get(&creator).cloned().unwrap();
+    let creator_wallet = store.wallets.lock().unwrap().get(&creator).cloned().unwrap();
+    let pw = store.passwords.lock().unwrap().get(&creator).cloned().unwrap();
+    let pin = store.transaction_pins.lock().unwrap().get(&creator).cloned().unwrap();
+    crate::db::persist_user(&pool, &creator_user, &pw, &pin, &creator_wallet).await.unwrap();
+
+    let payer_id = store.phone_index.lock().unwrap().get(&phone_p).copied().unwrap();
+    let payer_user = store.users.lock().unwrap().get(&payer_id).cloned().unwrap();
+    let payer_wallet = store.wallets.lock().unwrap().get(&payer_id).cloned().unwrap();
+    let ppw = store.passwords.lock().unwrap().get(&payer_id).cloned().unwrap();
+    let ppin = store.transaction_pins.lock().unwrap().get(&payer_id).cloned().unwrap();
+    crate::db::persist_user(&pool, &payer_user, &ppw, &ppin, &payer_wallet).await.unwrap();
+
+    let bill = bills::create_bill(&store, creator, CreateBillRequest {
+        title: "E2E dinner".into(),
+        total_kobo: 20_000,
+        participant_phones: vec![phone_p],
+        deadline_at: Utc::now() + Duration::days(5),
+    }).unwrap();
+    let participants: Vec<(uuid::Uuid, i64)> = store
+        .bill_participant_index.lock().unwrap()
+        .get(&bill.id).cloned().unwrap_or_default()
+        .iter()
+        .filter_map(|uid| {
+            store.bill_participants.lock().unwrap().get(&(bill.id, *uid)).map(|p| (*uid, p.share_kobo))
+        })
+        .collect();
+    crate::db::persist_bill(&pool, &bill, &participants).await.unwrap();
+
+    let session = bills::initiate_bill_payment(
+        &store,
+        &pool,
+        bill.id,
+        creator,
+        &PayBillRequest { transaction_pin: TEST_TXN_PIN.into(), amount_kobo: None },
+        &format!("e2e-{}", bill.id),
+    ).await.expect("checkout");
+
+    crate::db::settle_payment_attempt(&pool, &session.reference, session.amount_kobo)
+        .await
+        .expect("settle");
+
+    // Simulate process restart: new in-memory store from Postgres only.
+    let reloaded = crate::store::Store::load_from_db(&pool).await.expect("reload");
+    let p = reloaded.bill_participants.lock().unwrap()
+        .get(&(bill.id, creator)).cloned().expect("participant");
+    assert!(p.paid, "share must stay paid after reload");
+    assert!(p.amount_paid_kobo > 0);
+}
+
 // ── Media ─────────────────────────────────────────────────────────────────────
 
 #[test]

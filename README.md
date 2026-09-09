@@ -2,6 +2,8 @@
 
 A fintech web application for Nigerians — digital rotating savings (Ajo/Esusu), bill splitting, and wallet management with Paystack payments.
 
+**Ship it:** Railway (API) + Supabase (Postgres) + Cloudflare Pages (frontend) + R2 (media) + Worker gateway — step-by-step in [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
 Rust REST API on the backend, serving a React web client (`web/`). In production the API serves the client's built assets itself, so the whole app is one process on one origin.
 
 ---

@@ -281,6 +281,25 @@ export function useSaveMandate() {
   return useMutation({ mutationFn: api.payments.saveMandate })
 }
 
+export function useMandates(enabled = true) {
+  return useQuery({
+    queryKey: ['payments', 'mandates'] as const,
+    queryFn: ({ signal }) => api.payments.listMandates(signal),
+    enabled,
+    ...privateRead,
+  })
+}
+
+export function useInitializeMandate() {
+  return useMutation({
+    mutationFn: (transactionPin: string) =>
+      api.payments.initializeMandate({ transaction_pin: transactionPin }, newIdempotencyKey()),
+    onSuccess: (data) => {
+      if (data.authorization_url) window.location.assign(data.authorization_url)
+    },
+  })
+}
+
 export function useSetAjoPaymentMode() {
   const queryClient = useQueryClient()
   return useMutation({

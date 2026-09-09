@@ -5,10 +5,11 @@ import { StatusPill } from '~/components/domain/status-pill'
 import { Avatar, Badge } from '~/components/ui/display'
 import { Button } from '~/components/ui/button'
 import { Field, Input, Radio } from '~/components/ui/field'
+import { PinInput } from '~/components/ui/pin-input'
 import { useToast } from '~/components/ui/toast'
 import { ExternalIcon, ShieldIcon, SignOutIcon } from '~/components/icons'
 import { useAuth } from '~/lib/auth'
-import { useUploadMedia, useVerifyBvn } from '~/lib/api/hooks'
+import { useInitializeMandate, useMandates, useUploadMedia, useVerifyBvn } from '~/lib/api/hooks'
 import { ApiError, errorMessage, API_BASE_URL } from '~/lib/api/client'
 import { useTheme, type ThemePreference } from '~/lib/theme'
 import { formatDate } from '~/lib/format'
@@ -65,6 +66,8 @@ function SettingsPage() {
       </section>
 
       <KycSection />
+
+      <AutoDebitSection />
 
       <section className="panel mt-6 px-5 py-4">
         <h2 className="text-base text-ink">Security</h2>
@@ -265,6 +268,71 @@ function KycSection() {
       ) : user.kyc_status === 'verified' ? (
         <p className="mt-3 text-[0.8125rem] leading-6 text-ink-faint">Your identity is verified.</p>
       ) : null}
+    </section>
+  )
+}
+
+function AutoDebitSection() {
+  const mandates = useMandates()
+  const init = useInitializeMandate()
+  const { toast } = useToast()
+  const [pin, setPin] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const active = (mandates.data?.mandates ?? []).filter((m) => m.status === 'active')
+
+  async function handleLink() {
+    setError(null)
+    if (pin.length < 4) {
+      setError('Enter your transaction PIN.')
+      return
+    }
+    try {
+      await init.mutateAsync(pin)
+      toast({
+        title: 'Opening Paystack',
+        description: 'A ₦100 charge links a reusable card for Ajo auto-debit. Cowri does not store the card.',
+        tone: 'success',
+      })
+    } catch (caught) {
+      setError(errorMessage(caught))
+    }
+  }
+
+  return (
+    <section className="panel mt-6 px-5 py-4">
+      <h2 className="text-base text-ink">Auto-debit card</h2>
+      <p className="mt-1 text-sm leading-6 text-ink-muted">
+        Link a card via Paystack (₦100 checkout). We store only a reusable authorization code so
+        Ajo can charge on the circle&apos;s schedule. Money still moves at Paystack — not in a Cowri vault.
+      </p>
+      {mandates.isPending ? (
+        <p className="mt-3 text-sm text-ink-faint">Checking linked cards…</p>
+      ) : active.length > 0 ? (
+        <ul className="mt-3 text-sm text-ink">
+          {active.map((m) => (
+            <li key={m.id}>
+              {m.card_type ?? 'Card'} {m.card_last4 ? `ending ${m.card_last4}` : ''}{' '}
+              {m.bank ? `· ${m.bank}` : ''}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm text-ink-faint">No card linked yet.</p>
+      )}
+      <div className="mt-4 flex max-w-sm flex-col gap-3">
+        <Field label="Transaction PIN" error={error} required>
+          <PinInput label="Transaction PIN" value={pin} onValueChange={setPin} length={4} secret />
+        </Field>
+        <Button
+          variant="primary"
+          onClick={() => void handleLink()}
+          loading={init.isPending}
+          loadingText="Starting checkout"
+          className="self-start"
+        >
+          {active.length > 0 ? 'Link another card' : 'Link card (₦100)'}
+        </Button>
+      </div>
     </section>
   )
 }

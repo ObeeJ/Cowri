@@ -97,6 +97,18 @@ export type AjoDetail = {
   members: AjoMemberSummary[]
   contributions_this_cycle: number
   members_total: number
+  my_payment_mode?: 'manual' | 'auto'
+  has_active_mandate?: boolean
+}
+
+export type PaymentMandate = {
+  id: Uuid
+  email: string
+  card_last4: string | null
+  bank: string | null
+  card_type: string | null
+  status: string
+  consented_at: IsoDateTime
 }
 
 export type AjoInvite = {

@@ -35,6 +35,8 @@ jobs:
 
     env:
       DATABASE_URL: postgres://cowri:cowri@localhost:5432/cowri
+      COWRI_PAYMENTS_MODE: mock
+      BVN_HASH_PEPPER: ci-bvn-pepper-not-a-secret
 
     steps:
       - uses: actions/checkout@v4

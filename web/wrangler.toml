@@ -1,0 +1,14 @@
+# Cloudflare Pages — frontend.
+# Build: npm ci && npm run build  (root directory: web/)
+# Output: dist
+#
+# For same-origin cookies, put Pages on app.example.com and the gateway Worker
+# on api.example.com, then set VITE_COWRI_API_URL at *build* time to
+# https://api.example.com/v1 and CORS_ORIGIN on Railway to https://app.example.com
+#
+# Preferred: Pages on example.com AND a Worker route example.com/v1* → Railway
+# so the browser only talks to /v1 (leave VITE_COWRI_API_URL unset).
+
+name = "cowri-web"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-04-01"

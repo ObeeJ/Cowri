@@ -44,10 +44,18 @@ pub fn ok_resp<T: serde::Serialize>(status: u16, v: T) -> Response {
     ok(status, v)
 }
 
-/// Build a Secure, HttpOnly, SameSite=Strict cookie value
+/// Build a Secure, HttpOnly cookie. SameSite defaults to Strict (Cloudflare
+/// gateway same-origin). Set COOKIE_SAMESITE=None when the Pages origin talks
+/// directly to Railway without the /v1 proxy.
 fn cookie(name: &str, value: &str, max_age_secs: u32) -> String {
+    let same_site = std::env::var("COOKIE_SAMESITE").unwrap_or_else(|_| "Strict".into());
+    let same_site = match same_site.to_ascii_lowercase().as_str() {
+        "none" => "None",
+        "lax" => "Lax",
+        _ => "Strict",
+    };
     format!(
-        "{name}={value}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age={max_age_secs}"
+        "{name}={value}; HttpOnly; Secure; SameSite={same_site}; Path=/; Max-Age={max_age_secs}"
     )
 }
 
@@ -845,7 +853,23 @@ pub async fn get_ajo(req: Request) -> Response {
         Some(id) => id, None => return err(400, "Invalid group ID"),
     };
     match crate::services::ajo::get_group(&state.store, group_id, user_id) {
-        Ok(v)  => ok(200, v),
+        Ok(mut v)  => {
+            let mode: Option<(String,)> = sqlx::query_as(
+                "SELECT payment_mode FROM ajo_members WHERE group_id = $1 AND user_id = $2"
+            )
+            .bind(group_id).bind(user_id)
+            .fetch_optional(&state.db).await.ok().flatten();
+            let has_mandate: Option<(i64,)> = sqlx::query_as(
+                "SELECT COUNT(*)::bigint FROM payment_mandates WHERE user_id = $1 AND status = 'active'"
+            )
+            .bind(user_id)
+            .fetch_optional(&state.db).await.ok().flatten();
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert("my_payment_mode".into(), serde_json::json!(mode.map(|m| m.0).unwrap_or_else(|| "manual".into())));
+                obj.insert("has_active_mandate".into(), serde_json::json!(has_mandate.map(|c| c.0 > 0).unwrap_or(false)));
+            }
+            ok(200, v)
+        }
         Err(e) => ok(404, e),
     }
 }
@@ -1067,6 +1091,65 @@ pub async fn save_payment_mandate(req: Request) -> Response {
     }
 
     ok(201, serde_json::json!({ "status": "saved", "mandate_id": id }))
+}
+
+pub async fn list_payment_mandates(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    match db::list_mandates(&state.db, user_id).await {
+        Ok(rows) => ok(200, serde_json::json!({ "mandates": rows })),
+        Err(e) => {
+            tracing::error!(error = %e, "list mandates failed");
+            err(500, "Could not list mandates")
+        }
+    }
+}
+
+/// ₦100 Paystack checkout whose reusable authorization is saved on webhook.
+pub async fn initialize_mandate(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+    let Json(body) = match Json::<TransactionPinRequest>::from_request(&req) {
+        Ok(b) => b, Err(_) => return err(400, "Invalid request body"),
+    };
+    if let Err(e) = crate::services::payments::require_pin(&state.store, user_id, &body.transaction_pin) {
+        return ok(403, e);
+    }
+
+    let (email, phone) = {
+        let users = state.store.users.lock().unwrap();
+        let u = users.get(&user_id).unwrap();
+        (u.email.clone().unwrap_or_default(), u.phone.clone())
+    };
+    if email.is_empty() {
+        return err(400, "Email required to link a card");
+    }
+
+    let idem = req.headers.get("x-idempotency-key").cloned()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let idem_key = format!("mandate-link-{user_id}-{idem}");
+    let amount = 10_000i64; // ₦100 — Paystack minimum-ish for a reusable auth
+
+    let obligation_id = match db::insert_obligation(
+        &state.db, "fund_mirror", user_id, Some(user_id), amount,
+        None, None, None, None, &idem_key,
+    ).await {
+        Ok(id) => id,
+        Err(_) => return err(500, "Could not start card link"),
+    };
+
+    match crate::services::payments::init_checkout(
+        &state.db, &email, Some(&phone), obligation_id, amount,
+        &format!("{idem_key}:attempt"), "/settings",
+    ).await {
+        Ok(session) => ok(200, serde_json::json!({
+            "status": "checkout_required",
+            "authorization_url": session.authorization_url,
+            "reference": session.reference,
+            "amount_kobo": session.amount_kobo,
+        })),
+        Err(e) => ok(400, e),
+    }
 }
 
 pub async fn p2p_payment(req: Request) -> Response {

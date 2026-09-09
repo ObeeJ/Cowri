@@ -405,6 +405,16 @@ export const api = {
         method: 'POST',
         body,
       }),
+
+    listMandates: (signal?: AbortSignal) =>
+      request<{ mandates: import('./types').PaymentMandate[] }>('/payments/mandates', { signal }),
+
+    initializeMandate: (body: TransactionPinRequest, idempotencyKey?: string) =>
+      request<import('./types').CheckoutRequiredResponse>('/payments/mandates/initialize', {
+        method: 'POST',
+        body,
+        idempotencyKey,
+      }),
   },
 
   admin: {

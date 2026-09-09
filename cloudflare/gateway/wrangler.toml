@@ -1,0 +1,12 @@
+name = "cowri-api-gateway"
+main = "src/index.js"
+compatibility_date = "2026-04-01"
+
+# Set in the Cloudflare dashboard (or `wrangler secret`):
+#   RAILWAY_API_ORIGIN = https://your-service.up.railway.app
+# Custom domain: api.yourdomain → this worker, then Pages uses same-origin /v1 via a second
+# worker on the apex, or set Pages to talk to this hostname.
+
+[vars]
+# Non-secret fallback for local `wrangler dev`
+RAILWAY_API_ORIGIN = "http://localhost:3000"
