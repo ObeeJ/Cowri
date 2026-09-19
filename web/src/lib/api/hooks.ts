@@ -300,6 +300,25 @@ export function useInitializeMandate() {
   })
 }
 
+/**
+ * Polled by the post-checkout verify pages. The webhook that actually
+ * settles a payment lands asynchronously — sometimes after the browser is
+ * already back from Paystack — so this keeps refetching every 2s until the
+ * attempt reaches a terminal state, rather than trusting the redirect alone.
+ */
+export function usePaymentStatus(reference: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.paymentStatus(reference ?? ''),
+    queryFn: ({ signal }) => api.payments.status(reference!, signal),
+    enabled: Boolean(reference),
+    retry: false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.attempt_status
+      return status === 'settled' || status === 'failed' ? false : 2_000
+    },
+  })
+}
+
 export function useSetAjoPaymentMode() {
   const queryClient = useQueryClient()
   return useMutation({

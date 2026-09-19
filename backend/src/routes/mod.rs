@@ -1152,6 +1152,42 @@ pub async fn initialize_mandate(req: Request) -> Response {
     }
 }
 
+/// Polled by the `/wallet/verify` and `/bills/verify` pages after a checkout
+/// redirect. The webhook settles asynchronously — sometimes after the
+/// browser is already back — so the client needs somewhere to ask "did it
+/// land yet?" rather than assuming the redirect alone means success.
+pub async fn payment_status(req: Request) -> Response {
+    let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
+    let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };
+
+    let reference = match req.params.get("reference") {
+        Some(r) if !r.is_empty() => r.clone(),
+        _ => return err(400, "Missing reference"),
+    };
+
+    let status = match db::get_payment_status(&state.db, &reference).await {
+        Ok(Some(s)) => s,
+        Ok(None) => return err(404, "Payment attempt not found"),
+        Err(_) => return err(500, "Could not look up payment status"),
+    };
+
+    // Only the payer may poll their own payment's status.
+    if status.payer_user_id != user_id {
+        return err(404, "Payment attempt not found");
+    }
+
+    ok(200, serde_json::json!({
+        "attempt_status": status.attempt_status,
+        "obligation_status": status.obligation_status,
+        "obligation_id": status.obligation_id,
+        "amount_kobo": status.amount_kobo,
+        "amount_paid_kobo": status.amount_paid_kobo,
+        "kind": status.kind,
+        "bill_id": status.bill_id,
+        "ajo_group_id": status.ajo_group_id,
+    }))
+}
+
 pub async fn p2p_payment(req: Request) -> Response {
     let state   = match state(&req) { Ok(s) => s, Err(e) => return e };
     let user_id = match auth(&req)  { Ok(id) => id, Err(e) => return e };

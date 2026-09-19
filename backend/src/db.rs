@@ -908,56 +908,17 @@ pub async fn settle_payment_attempt(
         }
     }
 
-    // ── Persist wallet debit for payer (and credit for payee if internal) ──
-    // Wallet rows may not exist for every user (display-only mirror), so we
-    // use DO NOTHING rather than failing the whole settlement.
-    let payer_wallet: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM wallets WHERE user_id = $1"
-    )
-    .bind(payer_user_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    if let Some((payer_wallet_id,)) = payer_wallet {
-        sqlx::query(
-            "UPDATE wallets
-             SET available_kobo = available_kobo - $1,
-                 ledger_kobo    = ledger_kobo    - $1,
-                 version        = version + 1
-             WHERE id = $2 AND available_kobo >= $1"
-        )
-        .bind(attempt_amount)
-        .bind(payer_wallet_id)
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query(
-            "INSERT INTO ledger_entries
-                 (wallet_id, kind, amount_kobo, running_balance_kobo, reference, description, status)
-             SELECT $1, 'debit', $2,
-                    (SELECT available_kobo FROM wallets WHERE id = $1),
-                    $3, $4, 'settled'
-             ON CONFLICT (wallet_id, reference, kind) DO NOTHING"
-        )
-        .bind(payer_wallet_id)
-        .bind(attempt_amount)
-        .bind(reference)
-        .bind(format!("{kind} payment"))
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query(
-            "INSERT INTO transactions (wallet_id, kind, amount_kobo, reference, description, status)
-             VALUES ($1, 'debit', $2, $3, $4, 'success')
-             ON CONFLICT DO NOTHING"
-        )
-        .bind(payer_wallet_id)
-        .bind(attempt_amount)
-        .bind(reference)
-        .bind(format!("{kind} payment"))
-        .execute(&mut *tx)
-        .await?;
-    }
+    // No wallet debit for the payer here, deliberately. Every obligation kind
+    // that reaches this function (ajo, bill, gift, p2p, and the fund_mirror
+    // mandate-link charge) settles through a fresh Paystack checkout — money
+    // that came from the payer's card/bank, never from their Cowri balance.
+    // The one flow that actually funds the wallet (POST /v1/wallet/fund) does
+    // not create an obligation at all; it settles through the separate
+    // "legacy / wallet top-up" branch in paystack_webhook, via db::credit.
+    // Debiting available_kobo here would shrink a balance the payment never
+    // touched, and once available_kobo ran out it would silently no-op the
+    // UPDATE while still inserting a "debit" transaction row whose balance
+    // never moved — a data-integrity bug, not just a display one.
 
     // Credit the payee for p2p and ajo (bill creator collects externally via PSP).
     if (kind == "p2p" || kind == "ajo") {
@@ -1061,6 +1022,49 @@ pub async fn payer_for_reference(pool: &PgPool, reference: &str) -> Option<Uuid>
     .await
     .ok()
     .flatten()
+}
+
+pub struct PaymentStatusRow {
+    pub payer_user_id:      Uuid,
+    pub attempt_status:     String,
+    pub obligation_status:  String,
+    pub obligation_id:      Uuid,
+    pub amount_kobo:        i64,
+    pub amount_paid_kobo:   i64,
+    pub kind:                String,
+    pub bill_id:             Option<Uuid>,
+    pub ajo_group_id:        Option<Uuid>,
+}
+
+/// Looked up by the `/wallet/verify` and `/bills/verify` pages after a
+/// checkout redirect, so the client can poll until the webhook (which lands
+/// asynchronously, sometimes after the browser is already back) has settled
+/// the attempt — rather than trusting whatever the redirect alone implies.
+pub async fn get_payment_status(pool: &PgPool, reference: &str) -> Result<Option<PaymentStatusRow>, sqlx::Error> {
+    let row: Option<(Uuid, String, String, Uuid, i64, i64, String, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
+        "SELECT o.payer_user_id, a.status, o.status, o.id, o.amount_kobo, o.amount_paid_kobo,
+                o.kind, o.bill_id, o.ajo_group_id
+         FROM payment_attempts a
+         JOIN obligations o ON o.id = a.obligation_id
+         WHERE a.provider_reference = $1"
+    )
+    .bind(reference)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|(payer_user_id, attempt_status, obligation_status, obligation_id, amount_kobo, amount_paid_kobo, kind, bill_id, ajo_group_id)| {
+        PaymentStatusRow {
+            payer_user_id,
+            attempt_status,
+            obligation_status,
+            obligation_id,
+            amount_kobo,
+            amount_paid_kobo,
+            kind,
+            bill_id,
+            ajo_group_id,
+        }
+    }))
 }
 
 pub async fn upsert_mandate(

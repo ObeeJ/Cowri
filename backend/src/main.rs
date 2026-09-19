@@ -113,6 +113,7 @@ async fn main() {
         .route("POST", "/v1/bills/:id/installment-plan", routes::set_bill_installment_plan)
         .route("POST", "/v1/bills/:id/gift",       routes::gift_bill_share)
         .route("POST", "/v1/payments/p2p",         routes::p2p_payment)
+        .route("GET",  "/v1/payments/status/:reference", routes::payment_status)
         .route("GET",  "/v1/health",               routes::health)
         .route("GET",  "/v1/ledger/check",         routes::ledger_check)
         // Admin

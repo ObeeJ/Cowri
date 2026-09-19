@@ -218,6 +218,19 @@ export type CheckoutRequiredResponse = {
   amount_kobo: number
 }
 
+/** Polled after a checkout redirect — the webhook that actually settles the
+ * attempt lands asynchronously, sometimes after the browser is already back. */
+export type PaymentStatus = {
+  attempt_status: 'initialized' | 'charged' | 'settled' | 'failed'
+  obligation_status: 'pending' | 'partially_paid' | 'settled' | 'failed' | 'cancelled'
+  obligation_id: Uuid
+  amount_kobo: number
+  amount_paid_kobo: number
+  kind: 'ajo' | 'bill' | 'gift' | 'p2p' | 'fund_mirror'
+  bill_id: Uuid | null
+  ajo_group_id: Uuid | null
+}
+
 export type GiftBillRequest = {
   for_user_id: Uuid
   transaction_pin: string

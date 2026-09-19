@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { PageHeader } from '~/components/domain/page-header'
 import { BalanceCard, BalanceCardSkeleton } from '~/components/domain/balance-card'
@@ -22,13 +22,14 @@ const MIN_TOPUP_KOBO = 10_000
 const MAX_TOPUP_KOBO = 100_000_000
 const PER_PAGE = 20
 
-export const Route = createFileRoute('/_app/wallet')({
+export const Route = createFileRoute('/_app/wallet/')({
   component: WalletPage,
 })
 
 type Filter = 'all' | 'credit' | 'debit'
 
 function WalletPage() {
+  const navigate = useNavigate()
   const wallet = useWallet()
   const [page, setPage] = useState(0)
   const [filter, setFilter] = useState<Filter>('all')
@@ -60,7 +61,7 @@ function WalletPage() {
             <Button variant="primary" leading={<NoteIcon size={16} />} onClick={() => setFundOpen(true)}>
               Add money
             </Button>
-            <Button leading={<WalletIcon size={16} />} onClick={() => void (window.location.href = '/send')}>
+            <Button leading={<WalletIcon size={16} />} onClick={() => void navigate({ to: '/send' })}>
               Send money
             </Button>
           </>
@@ -176,7 +177,8 @@ function FundDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open
         description: 'Your balance updates once Paystack confirms the payment.',
         tone: 'info',
       })
-      // Same tab: the user comes back to /wallet, where the balance is refetched.
+      // Same tab: Paystack redirects back to /wallet/verify, which confirms
+      // settlement before sending the user on to /wallet.
       window.location.assign(result.authorization_url)
     } catch (caught) {
       setError(errorMessage(caught))

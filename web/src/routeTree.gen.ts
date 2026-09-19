@@ -26,7 +26,6 @@ import { Route as AppAdminRouteImport } from './routes/_app/admin'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppSendRouteImport } from './routes/_app/send'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
-import { Route as AppWalletRouteImport } from './routes/_app/wallet'
 import { Route as AppAdminIndexRouteImport } from './routes/_app/admin/index'
 import { Route as AppAdminAjoRouteImport } from './routes/_app/admin/ajo'
 import { Route as AppAdminHealthRouteImport } from './routes/_app/admin/health'
@@ -38,6 +37,9 @@ import { Route as AppAjoNewRouteImport } from './routes/_app/ajo/new'
 import { Route as AppBillsIndexRouteImport } from './routes/_app/bills/index'
 import { Route as AppBillsBillIdRouteImport } from './routes/_app/bills/$billId'
 import { Route as AppBillsNewRouteImport } from './routes/_app/bills/new'
+import { Route as AppBillsVerifyRouteImport } from './routes/_app/bills/verify'
+import { Route as AppWalletIndexRouteImport } from './routes/_app/wallet/index'
+import { Route as AppWalletVerifyRouteImport } from './routes/_app/wallet/verify'
 import { Route as AppAjoJoinGroupIdRouteImport } from './routes/_app/ajo/join.$groupId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -124,11 +126,6 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppRoute,
 } as any)
-const AppWalletRoute = AppWalletRouteImport.update({
-  id: '/wallet',
-  path: '/wallet',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppAdminIndexRoute = AppAdminIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -184,6 +181,21 @@ const AppBillsNewRoute = AppBillsNewRouteImport.update({
   path: '/bills/new',
   getParentRoute: () => AppRoute,
 } as any)
+const AppBillsVerifyRoute = AppBillsVerifyRouteImport.update({
+  id: '/bills/verify',
+  path: '/bills/verify',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWalletIndexRoute = AppWalletIndexRouteImport.update({
+  id: '/wallet/',
+  path: '/wallet/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWalletVerifyRoute = AppWalletVerifyRouteImport.update({
+  id: '/wallet/verify',
+  path: '/wallet/verify',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAjoJoinGroupIdRoute = AppAjoJoinGroupIdRouteImport.update({
   id: '/ajo/join/$groupId',
   path: '/ajo/join/$groupId',
@@ -207,7 +219,6 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AppDashboardRoute
   '/send': typeof AppSendRoute
   '/settings': typeof AppSettingsRoute
-  '/wallet': typeof AppWalletRoute
   '/admin/ajo': typeof AppAdminAjoRoute
   '/admin/health': typeof AppAdminHealthRoute
   '/admin/transactions': typeof AppAdminTransactionsRoute
@@ -216,9 +227,12 @@ export interface FileRoutesByFullPath {
   '/ajo/new': typeof AppAjoNewRoute
   '/bills/$billId': typeof AppBillsBillIdRoute
   '/bills/new': typeof AppBillsNewRoute
+  '/bills/verify': typeof AppBillsVerifyRoute
+  '/wallet/verify': typeof AppWalletVerifyRoute
   '/admin/': typeof AppAdminIndexRoute
   '/ajo/': typeof AppAjoIndexRoute
   '/bills/': typeof AppBillsIndexRoute
+  '/wallet/': typeof AppWalletIndexRoute
   '/ajo/join/$groupId': typeof AppAjoJoinGroupIdRoute
 }
 export interface FileRoutesByTo {
@@ -237,7 +251,6 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AppDashboardRoute
   '/send': typeof AppSendRoute
   '/settings': typeof AppSettingsRoute
-  '/wallet': typeof AppWalletRoute
   '/admin/ajo': typeof AppAdminAjoRoute
   '/admin/health': typeof AppAdminHealthRoute
   '/admin/transactions': typeof AppAdminTransactionsRoute
@@ -246,9 +259,12 @@ export interface FileRoutesByTo {
   '/ajo/new': typeof AppAjoNewRoute
   '/bills/$billId': typeof AppBillsBillIdRoute
   '/bills/new': typeof AppBillsNewRoute
+  '/bills/verify': typeof AppBillsVerifyRoute
+  '/wallet/verify': typeof AppWalletVerifyRoute
   '/admin': typeof AppAdminIndexRoute
   '/ajo': typeof AppAjoIndexRoute
   '/bills': typeof AppBillsIndexRoute
+  '/wallet': typeof AppWalletIndexRoute
   '/ajo/join/$groupId': typeof AppAjoJoinGroupIdRoute
 }
 export interface FileRoutesById {
@@ -270,7 +286,6 @@ export interface FileRoutesById {
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/send': typeof AppSendRoute
   '/_app/settings': typeof AppSettingsRoute
-  '/_app/wallet': typeof AppWalletRoute
   '/_app/admin/ajo': typeof AppAdminAjoRoute
   '/_app/admin/health': typeof AppAdminHealthRoute
   '/_app/admin/transactions': typeof AppAdminTransactionsRoute
@@ -279,9 +294,12 @@ export interface FileRoutesById {
   '/_app/ajo/new': typeof AppAjoNewRoute
   '/_app/bills/$billId': typeof AppBillsBillIdRoute
   '/_app/bills/new': typeof AppBillsNewRoute
+  '/_app/bills/verify': typeof AppBillsVerifyRoute
+  '/_app/wallet/verify': typeof AppWalletVerifyRoute
   '/_app/admin/': typeof AppAdminIndexRoute
   '/_app/ajo/': typeof AppAjoIndexRoute
   '/_app/bills/': typeof AppBillsIndexRoute
+  '/_app/wallet/': typeof AppWalletIndexRoute
   '/_app/ajo/join/$groupId': typeof AppAjoJoinGroupIdRoute
 }
 export interface FileRouteTypes {
@@ -303,7 +321,6 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/send'
     | '/settings'
-    | '/wallet'
     | '/admin/ajo'
     | '/admin/health'
     | '/admin/transactions'
@@ -312,9 +329,12 @@ export interface FileRouteTypes {
     | '/ajo/new'
     | '/bills/$billId'
     | '/bills/new'
+    | '/bills/verify'
+    | '/wallet/verify'
     | '/admin/'
     | '/ajo/'
     | '/bills/'
+    | '/wallet/'
     | '/ajo/join/$groupId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -333,7 +353,6 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/send'
     | '/settings'
-    | '/wallet'
     | '/admin/ajo'
     | '/admin/health'
     | '/admin/transactions'
@@ -342,9 +361,12 @@ export interface FileRouteTypes {
     | '/ajo/new'
     | '/bills/$billId'
     | '/bills/new'
+    | '/bills/verify'
+    | '/wallet/verify'
     | '/admin'
     | '/ajo'
     | '/bills'
+    | '/wallet'
     | '/ajo/join/$groupId'
   id:
     | '__root__'
@@ -365,7 +387,6 @@ export interface FileRouteTypes {
     | '/_app/dashboard'
     | '/_app/send'
     | '/_app/settings'
-    | '/_app/wallet'
     | '/_app/admin/ajo'
     | '/_app/admin/health'
     | '/_app/admin/transactions'
@@ -374,9 +395,12 @@ export interface FileRouteTypes {
     | '/_app/ajo/new'
     | '/_app/bills/$billId'
     | '/_app/bills/new'
+    | '/_app/bills/verify'
+    | '/_app/wallet/verify'
     | '/_app/admin/'
     | '/_app/ajo/'
     | '/_app/bills/'
+    | '/_app/wallet/'
     | '/_app/ajo/join/$groupId'
   fileRoutesById: FileRoutesById
 }
@@ -517,13 +541,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/wallet': {
-      id: '/_app/wallet'
-      path: '/wallet'
-      fullPath: '/wallet'
-      preLoaderRoute: typeof AppWalletRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/admin/': {
       id: '/_app/admin/'
       path: '/'
@@ -601,6 +618,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppBillsNewRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/bills/verify': {
+      id: '/_app/bills/verify'
+      path: '/bills/verify'
+      fullPath: '/bills/verify'
+      preLoaderRoute: typeof AppBillsVerifyRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/wallet/': {
+      id: '/_app/wallet/'
+      path: '/wallet'
+      fullPath: '/wallet/'
+      preLoaderRoute: typeof AppWalletIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/wallet/verify': {
+      id: '/_app/wallet/verify'
+      path: '/wallet/verify'
+      fullPath: '/wallet/verify'
+      preLoaderRoute: typeof AppWalletVerifyRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/ajo/join/$groupId': {
       id: '/_app/ajo/join/$groupId'
       path: '/ajo/join/$groupId'
@@ -636,13 +674,15 @@ interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
   AppSendRoute: typeof AppSendRoute
   AppSettingsRoute: typeof AppSettingsRoute
-  AppWalletRoute: typeof AppWalletRoute
   AppAjoGroupIdRoute: typeof AppAjoGroupIdRoute
   AppAjoNewRoute: typeof AppAjoNewRoute
   AppBillsBillIdRoute: typeof AppBillsBillIdRoute
   AppBillsNewRoute: typeof AppBillsNewRoute
+  AppBillsVerifyRoute: typeof AppBillsVerifyRoute
+  AppWalletVerifyRoute: typeof AppWalletVerifyRoute
   AppAjoIndexRoute: typeof AppAjoIndexRoute
   AppBillsIndexRoute: typeof AppBillsIndexRoute
+  AppWalletIndexRoute: typeof AppWalletIndexRoute
   AppAjoJoinGroupIdRoute: typeof AppAjoJoinGroupIdRoute
 }
 
@@ -651,13 +691,15 @@ const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
   AppSendRoute: AppSendRoute,
   AppSettingsRoute: AppSettingsRoute,
-  AppWalletRoute: AppWalletRoute,
   AppAjoGroupIdRoute: AppAjoGroupIdRoute,
   AppAjoNewRoute: AppAjoNewRoute,
   AppBillsBillIdRoute: AppBillsBillIdRoute,
   AppBillsNewRoute: AppBillsNewRoute,
+  AppBillsVerifyRoute: AppBillsVerifyRoute,
+  AppWalletVerifyRoute: AppWalletVerifyRoute,
   AppAjoIndexRoute: AppAjoIndexRoute,
   AppBillsIndexRoute: AppBillsIndexRoute,
+  AppWalletIndexRoute: AppWalletIndexRoute,
   AppAjoJoinGroupIdRoute: AppAjoJoinGroupIdRoute,
 }
 

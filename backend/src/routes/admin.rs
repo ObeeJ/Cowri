@@ -125,7 +125,7 @@ pub async fn get_user(req: Request) -> Response {
 struct SetRoleRequest { role: String }
 
 pub async fn set_user_role(req: Request) -> Response {
-    if let Err(e) = require_admin(&req) { return e; }
+    let requester_id = match require_admin(&req) { Ok(id) => id, Err(e) => return e };
     let state = match glideapi::State::<AppState>::from_request(&req) {
         Ok(glideapi::State(s)) => s, Err(_) => return err_resp(500, "Internal server error"),
     };
@@ -143,6 +143,15 @@ pub async fn set_user_role(req: Request) -> Response {
         "user"  => UserRole::User,
         _       => return err_resp(400, "Role must be 'user' or 'admin'"),
     };
+
+    // An admin can promote or demote anyone else, but never demote themselves —
+    // that's the only way this endpoint could ever leave zero admins behind,
+    // since every other admin who remains is still an admin after the call.
+    // Recovery from zero admins has no path but admin_bootstrap, which only
+    // works before any admin exists at all.
+    if user_id == requester_id && new_role == UserRole::User {
+        return err_resp(400, "You cannot remove your own admin role");
+    }
 
     let role_str = match new_role {
         UserRole::Admin => "admin",

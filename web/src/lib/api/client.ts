@@ -415,6 +415,10 @@ export const api = {
         body,
         idempotencyKey,
       }),
+
+    /** Poll this after a checkout redirect until attempt_status is settled/failed. */
+    status: (reference: string, signal?: AbortSignal) =>
+      request<import('./types').PaymentStatus>(`/payments/status/${reference}`, { signal }),
   },
 
   admin: {

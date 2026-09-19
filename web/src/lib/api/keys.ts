@@ -26,6 +26,8 @@ export const queryKeys = {
   adminAjo: ['admin', 'ajo'] as const,
   adminOutbox: ['admin', 'outbox'] as const,
 
+  paymentStatus: (reference: string) => ['payments', 'status', reference] as const,
+
   health: ['system', 'health'] as const,
   ledgerCheck: ['system', 'ledger-check'] as const,
 }
