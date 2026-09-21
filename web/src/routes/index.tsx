@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MarketingShell } from "~/components/layout/marketing-shell";
 import { Hero } from "~/components/landing-pages/home/hero";
+import { ValuePillarsSection } from "~/components/landing-pages/home/value-pillars";
 import { GlobalReachSection } from "~/components/landing-pages/home/global-reach";
 import { RealWorldUseSection } from "~/components/landing-pages/home/real-world-use";
 import {
@@ -66,6 +67,8 @@ function HomePage() {
       <GlobalReachSection />
 
       <RealWorldUseSection />
+
+      <ValuePillarsSection />
     </MarketingShell>
   );
 }
