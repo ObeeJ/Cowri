@@ -1,8 +1,8 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { MarketingShell } from "~/components/layout/marketing-shell";
 import { Hero } from "~/components/landing-pages/home/hero";
 import { GlobalReachSection } from "~/components/landing-pages/home/global-reach";
-import { Button } from "~/components/ui/button";
+import { RealWorldUseSection } from "~/components/landing-pages/home/real-world-use";
 import {
   CircleGroupIcon,
   ReceiptIcon,
@@ -65,19 +65,7 @@ function HomePage() {
 
       <GlobalReachSection />
 
-      {/* One line, one button. No second sales pitch. */}
-      <section className="px-4 py-14 sm:px-6 bg-paper-raised">
-        <div className="mx-auto flex max-w-xl flex-col items-center gap-4 text-center">
-          <p className="text-lg leading-8 text-ink">
-            Set up your wallet in a couple of minutes.
-          </p>
-          <Link to="/register">
-            <Button variant="primary" size="lg">
-              Create your account
-            </Button>
-          </Link>
-        </div>
-      </section>
+      <RealWorldUseSection />
     </MarketingShell>
   );
 }
