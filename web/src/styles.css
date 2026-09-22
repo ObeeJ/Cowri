@@ -45,11 +45,15 @@
   --radius-pill: 999px;
 
   /* Type */
-  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
-  --font-sans: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-heading), system-ui, sans-serif;
+  --font-body: var(--font-body), system-ui, sans-serif;
   --font-numeric: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
 
   --ease-ui: cubic-bezier(0.32, 0.72, 0.35, 1);
+
+  /* Tailwind font family utilities (map to CSS variables from next/font) */
+  --font-display: var(--font-heading);
+  --font-sans: var(--font-body);
 }
 
 /* Dark theme. Same structure, inverted paper: ink-dyed board stock. */
@@ -93,7 +97,7 @@
   body {
     background-color: var(--color-paper);
     color: var(--color-ink);
-    font-family: var(--font-sans);
+    font-family: var(--font-body);
     font-synthesis-weight: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -102,8 +106,10 @@
   h1,
   h2,
   h3,
-  h4 {
-    font-family: var(--font-display);
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
     font-weight: 500;
     letter-spacing: -0.014em;
   }
