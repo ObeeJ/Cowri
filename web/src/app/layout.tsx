@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
-import { IBM_Plex_Sans, Inter } from 'next/font/google'
+import { IBM_Plex_Sans, Google_Sans } from 'next/font/google'
 import '~/styles.css'
 
 const ibmPlex = IBM_Plex_Sans({
@@ -10,10 +10,11 @@ const ibmPlex = IBM_Plex_Sans({
   display: 'swap',
 })
 
-const inter = Inter({
+const googleSans = Google_Sans({
   subsets: ['latin'],
   variable: '--font-body',
   display: 'swap',
+  fallback: ['Inter', 'system-ui', 'sans-serif'],
 })
 
 export const metadata: Metadata = {
@@ -31,8 +32,6 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 }
 
-// Applies the stored theme before first paint so the page never flashes the
-// wrong canvas. Kept inline and tiny for that reason.
 const themeScript = `
 (function () {
   try {
@@ -51,7 +50,7 @@ const themeScript = `
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${ibmPlex.variable} ${inter.variable}`}>
+    <html lang="en" className={`${ibmPlex.variable} ${googleSans.variable}`}>
       <head>
         <meta name="theme-color" content="#f4f1ea" />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />

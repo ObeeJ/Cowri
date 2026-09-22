@@ -5,7 +5,7 @@ export function FeeBreakdownCard() {
     <div className="panel flex flex-col h-full rounded-xl">
       <div className="p-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-accent-tint rounded-[var(--radius-control)]">
+          <div className="p-2 bg-accent-tint rounded-full">
             <ShieldIcon size={20} className="text-accent" />
           </div>
           <h3 className="text-xl font-semibold text-ink">
