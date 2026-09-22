@@ -1,10 +1,10 @@
-import { Link, type LinkProps } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import { useState, type ReactNode } from 'react'
-import { cn } from '~/lib/cn'
 import { useAuth } from '~/lib/auth'
 import { useTheme } from '~/lib/theme'
 import { CloseIcon, MenuIcon, MoonIcon, ShellIcon, SunIcon } from '~/components/icons'
 import { Button, IconButton } from '~/components/ui/button'
+import { Footer } from '~/components/footer'
 
 const sections = [
   { to: '/how-ajo-works', label: 'How Ajo works' },
@@ -123,80 +123,7 @@ export function MarketingShell({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      <MarketingFooter />
-    </div>
-  )
-}
-
-function MarketingFooter() {
-  return (
-    <footer className="border-t border-rule bg-paper-raised">
-      <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr]">
-        <div>
-          <Link to="/" className="flex items-center gap-2.5 text-ink">
-            <ShellIcon size={24} className="text-accent" />
-            <span className="font-display text-lg">Cowri</span>
-          </Link>
-          <p className="mt-3 max-w-sm text-sm leading-6 text-ink-muted">
-            Rotating savings, split bills and a wallet, built on a double entry ledger so every
-            kobo is accounted for.
-          </p>
-        </div>
-
-        <FooterColumn
-          heading="Product"
-          links={[
-            { to: '/how-ajo-works', label: 'How Ajo works' },
-            { to: '/split-bills', label: 'Splitting bills' },
-            { to: '/security', label: 'Security' },
-            { to: '/design-system', label: 'Design system' },
-          ]}
-        />
-
-        <FooterColumn
-          heading="Legal"
-          links={[
-            { to: '/terms', label: 'Terms of Service' },
-            { to: '/privacy', label: 'Privacy Policy' },
-          ]}
-        />
-      </div>
-
-      <div className="border-t border-rule">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-ink-faint sm:px-6">
-          <p>Cowri. Built for saving together.</p>
-          <p>Amounts are held in kobo and reconciled against a double entry ledger.</p>
-        </div>
-      </div>
-    </footer>
-  )
-}
-
-function FooterColumn({
-  heading,
-  links,
-}: {
-  heading: string
-  links: ReadonlyArray<{ to: LinkProps['to']; label: string }>
-}) {
-  return (
-    <div>
-      <h2 className="label-caps">{heading}</h2>
-      <ul className="mt-3 flex flex-col gap-2">
-        {links.map((link) => (
-          <li key={link.to}>
-            <Link
-              to={link.to}
-              className={cn(
-                'text-sm text-ink-muted transition-colors duration-150 ease-[var(--ease-ui)]',
-                'hover:text-ink',
-              )}
-            >
-              {link.label}
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <Footer />
     </div>
   )
 }
