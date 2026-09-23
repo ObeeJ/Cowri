@@ -24,7 +24,7 @@ export function CashLinkCard() {
           <Button
             variant="primary"
             size="sm"
-            className="w-full sm:w-auto"
+            className="w-full sm:w-auto rounded-full"
             trailing={<ArrowIcon size={18} />}
           >
             Send a Cash Link
@@ -54,7 +54,7 @@ export function CashLinkCard() {
             <Button
               variant="primary"
               size="sm"
-              className="w-full"
+              className="w-full rounded-full"
               trailing={<ArrowIcon size={16} />}
             >
               Claim ₦10,000

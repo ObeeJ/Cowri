@@ -65,18 +65,18 @@
   :root.dark {
     color-scheme: dark;
 
-    --color-paper: #14130f;
-    --color-paper-raised: #1d1b16;
-    --color-paper-sunken: #0e0d0a;
-    --color-paper-inset: #26241d;
+    --color-paper: #06140a;
+    --color-paper-raised: #0d2216;
+    --color-paper-sunken: #040e06;
+    --color-paper-inset: #1a3624;
 
-    --color-ink: #ece7db;
-    --color-ink-muted: #a49c8b;
-    --color-ink-faint: #7d7566;
-    --color-ink-inverse: #14130f;
+    --color-ink: #e8f5ec;
+    --color-ink-muted: #8faf9a;
+    --color-ink-faint: #5a7a62;
+    --color-ink-inverse: #06140a;
 
-    --color-rule: #34312a;
-    --color-rule-strong: #4c4840;
+    --color-rule: #2a4a30;
+    --color-rule-strong: #3a5a40;
 
     --color-accent: #6fbd7f;
     --color-accent-hover: #8bcf99;

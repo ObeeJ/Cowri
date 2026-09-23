@@ -1,4 +1,4 @@
-const HERO_IMAGE_URL = "/cowri-hero.webp";
+const HERO_IMAGE_URL = "/hero-right-img.png";
 
 export function HeroGraphic() {
   return (

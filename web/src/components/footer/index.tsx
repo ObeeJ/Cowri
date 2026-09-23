@@ -2,22 +2,23 @@ import { FooterBrandCol } from "./FooterBrandCol";
 import { FooterLinksCol } from "./FooterLinksCol";
 import { FooterBottomBar } from "./FooterBottomBar";
 import { FooterWatermark } from "./FooterWatermark";
+import type { LinkItem } from "./FooterLinksCol";
 
-const PRODUCT_LINKS = [
+const PRODUCT_LINKS: LinkItem[] = [
   { label: "How Ajo works", href: "/how-ajo-works" },
   { label: "Splitting bills", href: "/split-bills" },
   { label: "Security", href: "/security" },
   { label: "Design system", href: "/design-system" },
 ];
 
-const SOCIAL_LINKS = [
+const SOCIAL_LINKS: LinkItem[] = [
   { label: "X (Twitter)", href: "https://x.com/cowri" },
   { label: "LinkedIn", href: "https://linkedin.com/company/cowri" },
   { label: "Instagram", href: "https://instagram.com/cowri" },
   { label: "WhatsApp Community", href: "https://whatsapp.com/cowri" },
 ];
 
-const LEGAL_LINKS = [
+const LEGAL_LINKS: LinkItem[] = [
   { label: "Terms of Service", href: "/terms" },
   { label: "Privacy Policy", href: "/privacy" },
   { label: "Security Policy", href: "/security-policy" },

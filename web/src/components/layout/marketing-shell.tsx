@@ -1,25 +1,31 @@
-import { Link } from '@tanstack/react-router'
-import { useState, type ReactNode } from 'react'
-import { useAuth } from '~/lib/auth'
-import { useTheme } from '~/lib/theme'
-import { CloseIcon, MenuIcon, MoonIcon, ShellIcon, SunIcon } from '~/components/icons'
-import { Button, IconButton } from '~/components/ui/button'
-import { Footer } from '~/components/footer'
+import { Link } from "@tanstack/react-router";
+import { useState, type ReactNode } from "react";
+import { useAuth } from "~/lib/auth";
+import { useTheme } from "~/lib/theme";
+import {
+  CloseIcon,
+  MenuIcon,
+  MoonIcon,
+  ShellIcon,
+  SunIcon,
+} from "~/components/icons";
+import { Button, IconButton } from "~/components/ui/button";
+import { Footer } from "~/components/footer";
 
 const sections = [
-  { to: '/how-ajo-works', label: 'How Ajo works' },
-  { to: '/split-bills', label: 'Splitting bills' },
-  { to: '/security', label: 'Security' },
-] as const
+  { to: "/how-ajo-works", label: "How Ajo works" },
+  { to: "/split-bills", label: "Splitting bills" },
+  { to: "/security", label: "Security" },
+] as const;
 
 /**
  * The public frame. Wider measure than the app shell, with the same rules and
  * paper surfaces so the marketing pages and the product read as one thing.
  */
 export function MarketingShell({ children }: { children: ReactNode }) {
-  const { status } = useAuth()
-  const { resolved, setPreference } = useTheme()
-  const [menuOpen, setMenuOpen] = useState(false)
+  const { status } = useAuth();
+  const { resolved, setPreference } = useTheme();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="flex min-h-dvh flex-col bg-paper">
@@ -37,13 +43,16 @@ export function MarketingShell({ children }: { children: ReactNode }) {
             <span className="font-display text-xl">Cowri</span>
           </Link>
 
-          <nav aria-label="Sections" className="ml-6 hidden items-center gap-1 md:flex">
+          <nav
+            aria-label="Sections"
+            className="ml-6 hidden items-center gap-1 md:flex"
+          >
             {sections.map((section) => (
               <Link
                 key={section.to}
                 to={section.to}
                 className="rounded-[var(--radius-control)] px-3 py-2 text-sm text-ink-muted transition-colors duration-150 ease-[var(--ease-ui)] hover:text-ink"
-                activeProps={{ className: 'text-ink font-medium' }}
+                activeProps={{ className: "text-ink font-medium" }}
               >
                 {section.label}
               </Link>
@@ -52,34 +61,35 @@ export function MarketingShell({ children }: { children: ReactNode }) {
 
           <div className="ml-auto flex items-center gap-2">
             <IconButton
-              label={`Switch to ${resolved === 'dark' ? 'light' : 'dark'} theme`}
+              label={`Switch to ${resolved === "dark" ? "light" : "dark"} theme`}
               size="sm"
-              onClick={() => setPreference(resolved === 'dark' ? 'light' : 'dark')}
+              onClick={() =>
+                setPreference(resolved === "dark" ? "light" : "dark")
+              }
             >
-              {resolved === 'dark' ? <SunIcon size={18} /> : <MoonIcon size={18} />}
+              {resolved === "dark" ? (
+                <SunIcon size={18} />
+              ) : (
+                <MoonIcon size={18} />
+              )}
             </IconButton>
 
-            {status === 'authenticated' ? (
+            {status === "authenticated" ? (
               <Link to="/dashboard">
                 <Button variant="primary" size="sm">
                   Open Cowri
                 </Button>
               </Link>
             ) : (
-              <>
-                <Link to="/login" className="hidden sm:block">
-                  <Button size="sm">Sign in</Button>
-                </Link>
-                <Link to="/register">
-                  <Button variant="primary" size="sm">
-                    Create account
-                  </Button>
-                </Link>
-              </>
+              <Link to="/login">
+                <Button variant="primary" size="sm" className="rounded-full">
+                  Start saving
+                </Button>
+              </Link>
             )}
 
             <IconButton
-              label={menuOpen ? 'Close menu' : 'Open menu'}
+              label={menuOpen ? "Close menu" : "Open menu"}
               size="sm"
               className="md:hidden"
               onClick={() => setMenuOpen((open) => !open)}
@@ -90,7 +100,10 @@ export function MarketingShell({ children }: { children: ReactNode }) {
         </div>
 
         {menuOpen ? (
-          <nav aria-label="Sections" className="border-t border-rule bg-paper-raised md:hidden">
+          <nav
+            aria-label="Sections"
+            className="border-t border-rule bg-paper-raised md:hidden"
+          >
             <ul className="mx-auto max-w-6xl px-4 py-2 sm:px-6">
               {sections.map((section) => (
                 <li key={section.to}>
@@ -103,7 +116,7 @@ export function MarketingShell({ children }: { children: ReactNode }) {
                   </Link>
                 </li>
               ))}
-              {status !== 'authenticated' ? (
+              {status !== "authenticated" ? (
                 <li>
                   <Link
                     to="/login"
@@ -125,5 +138,5 @@ export function MarketingShell({ children }: { children: ReactNode }) {
 
       <Footer />
     </div>
-  )
+  );
 }

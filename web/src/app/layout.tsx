@@ -42,7 +42,7 @@ const themeScript = `
         window.matchMedia('(prefers-color-scheme: dark)').matches)
     if (dark) {
       document.documentElement.classList.add('dark')
-      document.querySelector('meta[name="theme-color"]').setAttribute('content', '#14130f')
+      document.querySelector('meta[name="theme-color"]').setAttribute('content', '#06140a')
     }
   } catch (error) {}
 })()
