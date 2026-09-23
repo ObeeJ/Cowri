@@ -28,6 +28,7 @@ export function UseCaseContent() {
               variant="primary"
               size="sm"
               trailing={<ArrowIcon size={18} />}
+              className="rounded-full"
             >
               Create savings circle
             </Button>
