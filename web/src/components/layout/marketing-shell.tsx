@@ -8,6 +8,7 @@ import {
   MoonIcon,
   ShellIcon,
   SunIcon,
+  WalletIcon,
 } from "~/components/icons";
 import { Button, IconButton } from "~/components/ui/button";
 import { Footer } from "~/components/footer";
@@ -83,7 +84,7 @@ export function MarketingShell({ children }: { children: ReactNode }) {
             ) : (
               <Link to="/login">
                 <Button variant="primary" size="sm" className="rounded-full">
-                  Start saving
+                  Start saving <WalletIcon size={20} className="inline" />
                 </Button>
               </Link>
             )}
