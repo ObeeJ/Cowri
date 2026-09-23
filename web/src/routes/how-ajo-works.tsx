@@ -1,4 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { ArrowIcon } from "~/components/icons";
 import { MarketingShell } from "~/components/layout/marketing-shell";
 import { Article, Section, Steps } from "~/components/marketing/article";
 import { AjoPreview } from "~/components/marketing/product-preview";
@@ -111,13 +112,13 @@ function HowAjoWorksPage() {
           </p>
           <div className="flex gap-3">
             <Link to="/register">
-              <Button variant="primary" size="lg" className="rounded-full">
-                Create an account
+              <Button variant="primary" size="sm" className="rounded-full">
+                Create circle
               </Button>
             </Link>
             <Link to="/split-bills">
-              <Button size="lg" className="rounded-full">
-                Splitting bills
+              <Button size="sm" className="rounded-full" variant="link">
+                Splitting bills <ArrowIcon className="inline" size={18} />
               </Button>
             </Link>
           </div>
