@@ -4,7 +4,7 @@ export function UseCaseGraphic() {
   return (
     <div className="relative max-w-md w-full">
       {/* Top-Left Arch / Ring Accent */}
-      <div className="absolute -top-10 -left-12 w-32 h-32 md:w-44 md:h-44 rounded-full bg-accent-tint/60 z-0 pointer-events-none" />
+      <div className="absolute -top-10 -left-12 w-32 h-32 md:w-44 md:h-44 rounded-full bg-accent-tint z-0 pointer-events-none" />
 
       {/* Main Image Element */}
       <div className="relative z-10 overflow-hidden rounded-2xl border border-rule bg-paper-sunken">
