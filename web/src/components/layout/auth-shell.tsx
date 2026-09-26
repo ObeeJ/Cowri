@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { ShellIcon } from '~/components/icons'
+import { BackgroundMark } from './background-mark'
 
 export type AuthShellProps = {
   title: string
@@ -19,8 +20,9 @@ export type AuthShellProps = {
  */
 export function AuthShell({ title, description, children, footer }: AuthShellProps) {
   return (
-    <div className="min-h-dvh bg-paper px-4 py-10 sm:px-6 sm:py-16">
-      <div className="mx-auto w-full max-w-md">
+    <div className="relative min-h-dvh bg-paper px-4 py-10 sm:px-6 sm:py-16">
+      <BackgroundMark />
+      <div className="relative z-10 mx-auto w-full max-w-md">
         <Link to="/" className="inline-flex items-center gap-2.5 text-ink">
           <ShellIcon size={26} className="text-accent" />
           <span className="font-display text-xl">Cowri</span>

@@ -12,6 +12,7 @@ import {
 } from "~/components/icons";
 import { Button, IconButton } from "~/components/ui/button";
 import { Footer } from "~/components/footer";
+import { BackgroundMark } from "./background-mark";
 
 const sections = [
   { to: "/how-ajo-works", label: "How Ajo works" },
@@ -29,7 +30,8 @@ export function MarketingShell({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <div className="flex min-h-dvh flex-col bg-paper">
+    <div className="relative flex min-h-dvh flex-col bg-paper">
+      <BackgroundMark />
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-[var(--radius-control)] focus:border focus:border-accent focus:bg-paper-raised focus:px-4 focus:py-2 focus:text-sm"
@@ -133,7 +135,7 @@ export function MarketingShell({ children }: { children: ReactNode }) {
         ) : null}
       </header>
 
-      <main id="main" className="flex-1">
+      <main id="main" className="relative z-10 flex-1">
         {children}
       </main>
 

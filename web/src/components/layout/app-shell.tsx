@@ -21,6 +21,7 @@ import { IconButton } from '~/components/ui/button'
 import { DropdownMenu } from '~/components/ui/popover'
 import { Drawer } from '~/components/ui/dialog'
 import { OfflineNotice } from './offline-notice'
+import { BackgroundMark } from './background-mark'
 
 type NavItem = {
   to: LinkProps['to']
@@ -74,7 +75,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false)
 
   return (
-    <div className="min-h-dvh bg-paper">
+    <div className="relative min-h-dvh bg-paper">
+      <BackgroundMark />
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[70] focus:rounded-[var(--radius-control)] focus:border focus:border-accent focus:bg-paper-raised focus:px-4 focus:py-2 focus:text-sm"
@@ -98,7 +100,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <div className="lg:flex">
+      <div className="relative z-10 lg:flex">
         {/* Desktop rail */}
         <nav
           aria-label="Main"
