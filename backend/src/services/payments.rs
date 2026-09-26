@@ -188,6 +188,60 @@ pub fn require_pin(store: &Store, user_id: Uuid, pin: &str) -> Result<(), ApiErr
     verify_transaction_pin(store, user_id, pin)
 }
 
+/// ₦50,000 per transaction and ₦50,000/rolling-day — placeholder limits, not
+/// a compliance-reviewed figure. Adjust these two constants once product/
+/// legal signs off on real KYC tiers.
+const KYC_LIMIT_PER_TX_KOBO: i64 = 5_000_000;
+const KYC_LIMIT_DAILY_KOBO: i64 = 5_000_000;
+/// Money moving to a third party the sender chose — the actual fraud/AML
+/// exposure a KYC limit exists for. Funding your own wallet and paying your
+/// own bill share are deliberately excluded: that money always ends up
+/// either still yours or settling a debt you already owed, not going to
+/// someone the sender picked freely.
+const KYC_LIMITED_KINDS: [&str; 3] = ["p2p", "gift", "ajo"];
+
+/// Caps P2P sends, bill-share gifts, and ajo contributions until the sender's
+/// BVN is verified. Called before an obligation is created, not after, so an
+/// unverified account can't even initiate an over-limit checkout.
+pub async fn enforce_kyc_limit(
+    store: &Store,
+    pool: &PgPool,
+    user_id: Uuid,
+    amount_kobo: i64,
+) -> Result<(), ApiError> {
+    let verified = store.users.lock().unwrap()
+        .get(&user_id)
+        .map(|u| u.kyc_status == KycStatus::Verified)
+        .unwrap_or(false);
+    if verified {
+        return Ok(());
+    }
+
+    if amount_kobo > KYC_LIMIT_PER_TX_KOBO {
+        return Err(ApiError {
+            error: format!(
+                "This is over the ₦{} per-transaction limit for unverified accounts. Verify your BVN in Settings to raise it.",
+                KYC_LIMIT_PER_TX_KOBO / 100
+            ),
+        });
+    }
+
+    let today = crate::db::obligations_total_today(pool, user_id, &KYC_LIMITED_KINDS)
+        .await
+        .map_err(|_| ApiError { error: "Could not check your transaction limit".into() })?;
+
+    if today + amount_kobo > KYC_LIMIT_DAILY_KOBO {
+        return Err(ApiError {
+            error: format!(
+                "This would put you over the ₦{} daily limit for unverified accounts. Verify your BVN in Settings to raise it.",
+                KYC_LIMIT_DAILY_KOBO / 100
+            ),
+        });
+    }
+
+    Ok(())
+}
+
 /// Apply a successful charge to in-memory bill/ajo mirrors after DB settle.
 pub fn sync_ajo_from_settle(
     store: &Store,

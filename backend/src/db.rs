@@ -1010,6 +1010,23 @@ pub enum SettleResult {
     },
 }
 
+/// Sum of `amount_kobo` across obligations of the given kinds this user has
+/// *attempted* to pay today (created, not necessarily settled) — the choke
+/// point for KYC transaction limits needs to count attempts, not just
+/// successes, or an unverified user could fan out many pending obligations
+/// that individually stay under the cap while the cumulative total does not.
+pub async fn obligations_total_today(pool: &PgPool, user_id: Uuid, kinds: &[&str]) -> Result<i64, sqlx::Error> {
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(amount_kobo), 0)::int8 FROM obligations
+         WHERE payer_user_id = $1 AND kind = ANY($2::text[]) AND created_at >= date_trunc('day', NOW())"
+    )
+    .bind(user_id)
+    .bind(kinds)
+    .fetch_one(pool)
+    .await?;
+    Ok(total)
+}
+
 pub async fn payer_for_reference(pool: &PgPool, reference: &str) -> Option<Uuid> {
     sqlx::query_scalar::<_, Uuid>(
         "SELECT o.payer_user_id

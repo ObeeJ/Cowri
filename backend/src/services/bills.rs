@@ -251,6 +251,9 @@ pub async fn initiate_gift_payment(
     if !store.bill_participants.lock().unwrap().contains_key(&(bill_id, payer_id)) {
         return Err(ApiError { error: "Not a participant".into() });
     }
+    if req.for_user_id == payer_id {
+        return Err(ApiError { error: "Use Pay to settle your own share, not Gift".into() });
+    }
 
     let beneficiary = store.bill_participants.lock().unwrap()
         .get(&(bill_id, req.for_user_id)).cloned()
@@ -265,6 +268,7 @@ pub async fn initiate_gift_payment(
     if amount <= 0 || amount > remaining {
         return Err(ApiError { error: "Invalid gift amount".into() });
     }
+    payments::enforce_kyc_limit(store, pool, payer_id, amount).await?;
 
     if Utc::now() > bill.complete_by_at {
         return Err(ApiError {

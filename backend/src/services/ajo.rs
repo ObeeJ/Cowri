@@ -150,6 +150,7 @@ pub async fn initiate_contribution(
     if group.status != AjoStatus::Active {
         return Err(ApiError { error: "Group is not active".into() });
     }
+    payments::enforce_kyc_limit(store, pool, contributor_id, group.contribution_kobo).await?;
     if !store.ajo_members.lock().unwrap().contains_key(&(group_id, contributor_id)) {
         return Err(ApiError { error: "Not a member of this group".into() });
     }

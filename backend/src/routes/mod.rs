@@ -1201,6 +1201,9 @@ pub async fn p2p_payment(req: Request) -> Response {
     if body.amount_kobo < 100 {
         return err(400, "Minimum transfer is ₦1");
     }
+    if let Err(e) = crate::services::payments::enforce_kyc_limit(&state.store, &state.db, user_id, body.amount_kobo).await {
+        return err(400, &e.error);
+    }
 
     let payee_id = {
         let phones = state.store.phone_index.lock().unwrap();

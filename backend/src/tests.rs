@@ -541,6 +541,45 @@ async fn bill_share_stays_paid_after_store_reload() {
     assert!(p.amount_paid_kobo > 0);
 }
 
+/// Requires DATABASE_URL (set in CI). Skips locally when Postgres is absent.
+#[tokio::test]
+async fn kyc_limit_blocks_unverified_over_cap_but_not_verified() {
+    use crate::services::payments;
+
+    let Ok(url) = std::env::var("DATABASE_URL") else { return };
+    std::env::set_var("JWT_SECRET", "test-secret-that-is-long-enough-32b");
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&url)
+        .await
+        .expect("connect");
+    crate::db::run_migrations(&pool).await.expect("migrate");
+
+    let store = crate::store::Store::new();
+    let n = (uuid::Uuid::new_v4().as_u128() % 10_000_000) as u32;
+    let phone = format!("0803{n:07}");
+    let uid = register_user(&store, &phone, "KycLimitE2E");
+
+    let user = store.users.lock().unwrap().get(&uid).cloned().unwrap();
+    assert_eq!(user.kyc_status, KycStatus::Unverified, "registration starts unverified");
+    let wallet = store.wallets.lock().unwrap().get(&uid).cloned().unwrap();
+    let pw = store.passwords.lock().unwrap().get(&uid).cloned().unwrap();
+    let pin = store.transaction_pins.lock().unwrap().get(&uid).cloned().unwrap();
+    crate::db::persist_user(&pool, &user, &pw, &pin, &wallet).await.unwrap();
+
+    // Over the per-transaction cap: rejected before any DB write.
+    let over_cap = payments::enforce_kyc_limit(&store, &pool, uid, 10_000_000).await;
+    assert!(over_cap.unwrap_err().error.contains("per-transaction limit"));
+
+    // Under the cap: allowed.
+    payments::enforce_kyc_limit(&store, &pool, uid, 1_000_000).await.expect("under cap");
+
+    // Verified accounts are exempt, even for an amount that would otherwise fail.
+    store.users.lock().unwrap().get_mut(&uid).unwrap().kyc_status = KycStatus::Verified;
+    payments::enforce_kyc_limit(&store, &pool, uid, 10_000_000).await.expect("verified is exempt");
+}
+
 // ── Media ─────────────────────────────────────────────────────────────────────
 
 #[test]
